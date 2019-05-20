@@ -20,9 +20,9 @@
 // THE SOFTWARE.
 //
 
+#include "D3D12MemAlloc.h"
+
 namespace D3D12MA
 {
-
-
 
 } // namespace D3D12MA

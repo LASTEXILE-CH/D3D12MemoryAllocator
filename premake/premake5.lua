@@ -41,7 +41,7 @@ targetsuffix ("_Release_" .. _SUFFIX)
 
 filter { "platforms:x64" }
 defines { "WIN32", "_CONSOLE", "PROFILE", "_WINDOWS", "_WIN32_WINNT=0x0601" }
-links { }
+links { "d3d12.lib", "dxgi.lib", "d3dcompiler.lib" }
 
 filter { "configurations:Debug", "platforms:x64" }
 buildoptions { "/MDd" }

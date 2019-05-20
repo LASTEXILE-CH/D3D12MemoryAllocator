@@ -22,9 +22,20 @@
 
 #pragma once
 
+#include <dxgi1_4.h>
+#include <d3d12.h>
+#include <d3dcompiler.h>
+#include <d3d12sdklayers.h>
+#include "d3dx12.h"
+
+#include <DirectXMath.h>
+using namespace DirectX;
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#include <wincodec.h>
+#include <atlbase.h> // For CComPtr
 
 #include <iostream>
 #include <fstream>
@@ -63,24 +74,28 @@ typedef std::chrono::high_resolution_clock::duration duration;
 
 #define ERR_GUARD_HR(expr) TEST(SUCCEEDED(expr))
 
+#define CHECK_HR(expr) ERR_GUARD_HR(expr)
+
+#define SAFE_RELEASE(x)   do { if(x) { (x)->Release(); (x) = nullptr; } } while(false)
+
 inline float ToFloatSeconds(duration d)
 {
     return std::chrono::duration_cast<std::chrono::duration<float>>(d).count();
 }
 
 template <typename T>
-inline T ceil_div(T x, T y)
+inline T CeilDiv(T x, T y)
 {
     return (x+y-1) / y;
 }
 template <typename T>
-inline T round_div(T x, T y)
+inline T RoundDiv(T x, T y)
 {
     return (x+y/(T)2) / y;
 }
 
 template <typename T>
-static inline T align_up(T val, T align)
+static inline T AlignUp(T val, T align)
 {
     return (val + align - 1) / align * align;
 }
@@ -247,8 +262,6 @@ struct MyUniformRandomNumberGenerator
 {
     typedef uint32_t result_type;
     MyUniformRandomNumberGenerator(RandomNumberGenerator& gen) : m_Gen(gen) { }
-    static uint32_t min() { return 0; }
-    static uint32_t max() { return UINT32_MAX; }
     uint32_t operator()() { return m_Gen.Generate(); }
 
 private:
