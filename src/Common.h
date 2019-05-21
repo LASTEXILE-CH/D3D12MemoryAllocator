@@ -58,25 +58,16 @@ using namespace DirectX;
 typedef std::chrono::high_resolution_clock::time_point time_point;
 typedef std::chrono::high_resolution_clock::duration duration;
 
-#ifdef _DEBUG
-    #define TEST(expr) do { \
-            if(!(expr)) { \
-                assert(0 && #expr); \
-            } \
-        } while(0)
-#else
-    #define TEST(expr) do { \
-            if(!(expr)) { \
-                throw std::runtime_error("TEST FAILED: " #expr); \
-            } \
-        } while(0)
-#endif
+#define STRINGIZE(x) STRINGIZE2(x)
+#define STRINGIZE2(x) #x
+#define LINE_STRING STRINGIZE(__LINE__)
+#define FAIL(msg) do { \
+        assert(0 && msg); \
+        throw std::runtime_error(msg); \
+    } while(false)
 
-#define ERR_GUARD_HR(expr) TEST(SUCCEEDED(expr))
-
-#define CHECK_HR(expr) ERR_GUARD_HR(expr)
-
-#define SAFE_RELEASE(x)   do { if(x) { (x)->Release(); (x) = nullptr; } } while(false)
+#define CHECK_BOOL(expr)  do { if(!(expr)) FAIL(__FILE__ "(" LINE_STRING "): !( " #expr " )"); } while(false)
+#define CHECK_HR(expr)  do { if(FAILED(expr)) FAIL(__FILE__ "(" LINE_STRING "): FAILED( " #expr " )"); } while(false)
 
 inline float ToFloatSeconds(duration d)
 {

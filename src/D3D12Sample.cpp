@@ -343,8 +343,6 @@ void InitD3D() // initializes direct3d 12
         DXGI_ADAPTER_DESC1 desc;
         adapter->GetDesc1(&desc);
 
-        SAFE_RELEASE(adapter);
-
         if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0)
         {
             HRESULT hr = D3D12CreateDevice(adapter, MY_D3D_FEATURE_LEVEL, _uuidof(ID3D12Device), nullptr);
@@ -354,6 +352,7 @@ void InitD3D() // initializes direct3d 12
                 break;
             }
         }
+        adapter->Release();
         adapterIndex++;
     }
     assert(adapterFound);
