@@ -247,15 +247,6 @@ struct mat4
             v.x, v.y, v.z, 1.f);
     }
 
-    static mat4 Translation(const vec4& v)
-    {
-        return mat4(
-            1.f, 0.f, 0.f, 0.f,
-            0.f, 1.f, 0.f, 0.f,
-            0.f, 0.f, 1.f, 0.f,
-            v.x, v.y, v.z, v.w);
-    }
-
     static mat4 Scaling(float s)
     {
         return mat4(
