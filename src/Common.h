@@ -197,6 +197,14 @@ struct mat4
     {
     }
 
+    mat4(const float* data) :
+        _11(data[ 0]), _12(data[ 1]), _13(data[ 2]), _14(data[ 3]),
+        _21(data[ 4]), _22(data[ 5]), _23(data[ 6]), _24(data[ 7]),
+        _31(data[ 8]), _32(data[ 9]), _33(data[10]), _34(data[11]),
+        _41(data[12]), _42(data[13]), _43(data[14]), _44(data[15])
+    {
+    }
+
     mat4 operator*(const mat4 &rhs) const
     {
         return mat4(

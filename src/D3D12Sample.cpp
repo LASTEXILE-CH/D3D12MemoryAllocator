@@ -26,6 +26,19 @@
 #include <DirectXMath.h>
 using namespace DirectX;
 
+XMFLOAT4X4 mat4ToXMFLOAT4X4(const mat4& m)
+{
+    return XMFLOAT4X4(&m._11);
+}
+mat4 XMMATRIXTomat4(const XMMATRIX& m)
+{
+    return mat4(m.r[0].m128_f32);
+}
+XMFLOAT4 vec4ToXMFLOAT4(const vec4& v)
+{
+    return XMFLOAT4(v.x, v.y, v.z, v.w);
+}
+
 const wchar_t * const CLASS_NAME = L"D3D12MemAllocSample";
 const wchar_t * const WINDOW_TITLE = L"Direct3D 12 Memory Allocator Sample";
 const int SIZE_X = 1024;
@@ -70,9 +83,9 @@ CComPtr<ID3D12Resource> g_DepthStencilBuffer;
 CComPtr<ID3D12DescriptorHeap> g_DepthStencilDescriptorHeap;
 
 struct Vertex {
-    XMFLOAT3 pos;
-    XMFLOAT2 texCoord;
-    XMFLOAT4 color;
+    vec3 pos;
+    vec2 texCoord;
+    vec4 color;
 
     Vertex() { }
     Vertex(float x, float y, float z, float tx, float ty, float r, float g, float b, float a) :
@@ -85,24 +98,24 @@ struct Vertex {
 
 struct ConstantBuffer
 {
-    XMFLOAT4 ColorMultiplier;
+    vec4 ColorMultiplier;
 };
 
 struct ConstantBufferPerObject
 {
-    XMFLOAT4X4 WorldViewProj;
+    mat4 WorldViewProj;
 };
 size_t ConstantBufferPerObjectAlignedSize = AlignUp<size_t>(sizeof(ConstantBufferPerObject), 256);
 CComPtr<ID3D12Resource> g_CbPerObjectUploadHeaps[FRAME_BUFFER_COUNT];
 void* g_CbPerObjectAddress[FRAME_BUFFER_COUNT];
-XMFLOAT4X4 cameraProjMat; // this will store our projection matrix
-XMFLOAT4X4 cameraViewMat; // this will store our view matrix
-XMFLOAT4X4 cube1WorldMat; // our first cubes world matrix (transformation matrix)
-XMFLOAT4X4 cube1RotMat; // this will keep track of our rotation for the first cube
-XMFLOAT4 cube1Position; // our first cubes position in space
-XMFLOAT4X4 cube2WorldMat; // our first cubes world matrix (transformation matrix)
-XMFLOAT4X4 cube2RotMat; // this will keep track of our rotation for the second cube
-XMFLOAT4 cube2PositionOffset; // our second cube will rotate around the first cube, so this is the position offset from the first cube
+mat4 cameraProjMat; // this will store our projection matrix
+mat4 cameraViewMat; // this will store our view matrix
+mat4 cube1WorldMat; // our first cubes world matrix (transformation matrix)
+mat4 cube1RotMat; // this will keep track of our rotation for the first cube
+vec4 cube1Position; // our first cubes position in space
+mat4 cube2WorldMat; // our first cubes world matrix (transformation matrix)
+mat4 cube2RotMat; // this will keep track of our rotation for the second cube
+vec4 cube2PositionOffset; // our second cube will rotate around the first cube, so this is the position offset from the first cube
 uint32_t numCubeIndices; // the number of indices to draw the cube
 
 CComPtr<ID3D12DescriptorHeap> g_MainDescriptorHeap[FRAME_BUFFER_COUNT];
@@ -1136,41 +1149,39 @@ void InitD3D() // initializes direct3d 12
     }
 
     // build projection and view matrix
-    XMMATRIX tmpMat = XMMatrixPerspectiveFovLH(45.0f*(3.14f/180.0f), (float)SIZE_X / (float)SIZE_Y, 0.1f, 1000.0f);
-    XMStoreFloat4x4(&cameraProjMat, tmpMat);
+    cameraProjMat = mat4::Perspective(45.0f*(3.14f/180.0f), (float)SIZE_X / (float)SIZE_Y, 0.1f, 1000.0f);
 
     // set starting camera state
-    XMFLOAT4 cameraPosition; // this is our cameras position vector
-    XMFLOAT4 cameraTarget; // a vector describing the point in space our camera is looking at
-    XMFLOAT4 cameraUp; // the worlds up vector
-    cameraPosition = XMFLOAT4(0.0f, 2.0f, -4.0f, 0.0f);
-    cameraTarget = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);
-    cameraUp = XMFLOAT4(0.0f, 1.0f, 0.0f, 0.0f);
+    vec3 cameraPosition; // this is our cameras position vector
+    vec3 cameraTarget; // a vector describing the point in space our camera is looking at
+    vec3 cameraUp; // the worlds up vector
+    cameraPosition = vec3(0.0f, 2.0f, -4.0f);
+    cameraTarget = vec3(0.0f, 0.0f, 0.0f);
+    cameraUp = vec3(0.0f, 1.0f, 0.0f);
 
     // build view matrix
-    XMVECTOR cPos = XMLoadFloat4(&cameraPosition);
-    XMVECTOR cTarg = XMLoadFloat4(&cameraTarget);
-    XMVECTOR cUp = XMLoadFloat4(&cameraUp);
-    tmpMat = XMMatrixLookAtLH(cPos, cTarg, cUp);
-    XMStoreFloat4x4(&cameraViewMat, tmpMat);
+    vec3 cPos = cameraPosition;
+    vec3 cTarg = cameraTarget;
+    vec3 cUp = cameraUp;
+    cameraViewMat = mat4::LookAt(cTarg, cPos, cUp);
 
     // set starting cubes position
     // first cube
-    cube1Position = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f); // set cube 1's position
-    XMVECTOR posVec = XMLoadFloat4(&cube1Position); // create xmvector for cube1's position
+    cube1Position = vec4(0.0f, 0.0f, 0.0f, 0.0f); // set cube 1's position
+    vec4 posVec = cube1Position; // create xmvector for cube1's position
 
-    tmpMat = XMMatrixTranslationFromVector(posVec); // create translation matrix from cube1's position vector
-    XMStoreFloat4x4(&cube1RotMat, XMMatrixIdentity()); // initialize cube1's rotation matrix to identity matrix
-    XMStoreFloat4x4(&cube1WorldMat, tmpMat); // store cube1's world matrix
+    mat4 tmpMat = mat4::Translation(vec3(posVec.x, posVec.y, posVec.z)); // create translation matrix from cube1's position vector
+    cube1RotMat = mat4::Identity();
+    cube1WorldMat = tmpMat;
 
                                              // second cube
-    cube2PositionOffset = XMFLOAT4(1.5f, 0.0f, 0.0f, 0.0f);
-    posVec = XMLoadFloat4(&cube2PositionOffset) + XMLoadFloat4(&cube1Position); // create xmvector for cube2's position
+    cube2PositionOffset = vec4(1.5f, 0.0f, 0.0f, 0.0f);
+    posVec = cube2PositionOffset + cube1Position; // create xmvector for cube2's position
                                                                                 // we are rotating around cube1 here, so add cube2's position to cube1
 
-    tmpMat = XMMatrixTranslationFromVector(posVec); // create translation matrix from cube2's position offset vector
-    XMStoreFloat4x4(&cube2RotMat, XMMatrixIdentity()); // initialize cube2's rotation matrix to identity matrix
-    XMStoreFloat4x4(&cube2WorldMat, tmpMat); // store cube2's world matrix
+    tmpMat = mat4::Translation(vec3(posVec.x, posVec.y, posVec.z)); // create translation matrix from cube2's position offset vector
+    cube2RotMat = mat4::Identity(); // initialize cube2's rotation matrix to identity matrix
+    cube2WorldMat = tmpMat; // store cube2's world matrix
 
                                              // # TEXTURE
 
@@ -1272,7 +1283,7 @@ void Update()
         float f_sRGB = pow(f_Linear, 1.f / 2.2f);
 
         ConstantBuffer cb;
-        cb.ColorMultiplier = XMFLOAT4(f_sRGB, f_sRGB, f_sRGB, 1.f);
+        cb.ColorMultiplier = vec4(f_sRGB, f_sRGB, f_sRGB, 1.f);
         memcpy(g_ConstantBufferAddress[g_FrameIndex], &cb, sizeof(cb));
     }
 
@@ -1286,25 +1297,25 @@ void Update()
         XMMATRIX rotZMat = XMMatrixRotationZ(0.0003f);
 
         // add rotation to cube1's rotation matrix and store it
-        XMMATRIX rotMat = XMLoadFloat4x4(&cube1RotMat) * rotXMat * rotYMat * rotZMat;
-        XMStoreFloat4x4(&cube1RotMat, rotMat);
+        XMMATRIX rotMat = XMLoadFloat4x4(&mat4ToXMFLOAT4X4(cube1RotMat)) * rotXMat * rotYMat * rotZMat;
+        cube1RotMat = XMMATRIXTomat4(rotMat);
 
         // create translation matrix for cube 1 from cube 1's position vector
-        XMMATRIX translationMat = XMMatrixTranslationFromVector(XMLoadFloat4(&cube1Position));
+        XMMATRIX translationMat = XMMatrixTranslationFromVector(XMLoadFloat4(&vec4ToXMFLOAT4(cube1Position)));
 
         // create cube1's world matrix by first rotating the cube, then positioning the rotated cube
         XMMATRIX worldMat = rotMat * translationMat;
 
         // store cube1's world matrix
-        XMStoreFloat4x4(&cube1WorldMat, worldMat);
+        cube1WorldMat = XMMATRIXTomat4(worldMat);
 
         // update constant buffer for cube1
         // create the wvp matrix and store in constant buffer
-        XMMATRIX viewMat = XMLoadFloat4x4(&cameraViewMat); // load view matrix
-        XMMATRIX projMat = XMLoadFloat4x4(&cameraProjMat); // load projection matrix
-        XMMATRIX wvpMat = XMLoadFloat4x4(&cube1WorldMat) * viewMat * projMat; // create wvp matrix
+        XMMATRIX viewMat = XMLoadFloat4x4(&mat4ToXMFLOAT4X4(cameraViewMat)); // load view matrix
+        XMMATRIX projMat = XMLoadFloat4x4(&mat4ToXMFLOAT4X4(cameraProjMat)); // load projection matrix
+        XMMATRIX wvpMat = XMLoadFloat4x4(&mat4ToXMFLOAT4X4(cube1WorldMat)) * viewMat * projMat; // create wvp matrix
         XMMATRIX transposed = XMMatrixTranspose(wvpMat); // must transpose wvp matrix for the gpu
-        XMStoreFloat4x4(&cb.WorldViewProj, transposed); // store transposed wvp matrix in constant buffer
+        cb.WorldViewProj = XMMATRIXTomat4(transposed); // store transposed wvp matrix in constant buffer
 
                                                         // copy our ConstantBuffer instance to the mapped constant buffer resource
         memcpy(g_CbPerObjectAddress[g_FrameIndex], &cb, sizeof(cb));
@@ -1316,11 +1327,11 @@ void Update()
         rotZMat = XMMatrixRotationZ(0.0001f);
 
         // add rotation to cube2's rotation matrix and store it
-        rotMat = rotZMat * (XMLoadFloat4x4(&cube2RotMat) * (rotXMat * rotYMat));
-        XMStoreFloat4x4(&cube2RotMat, rotMat);
+        rotMat = rotZMat * (XMLoadFloat4x4(&mat4ToXMFLOAT4X4(cube2RotMat)) * (rotXMat * rotYMat));
+        cube2RotMat = XMMATRIXTomat4(rotMat);
 
         // create translation matrix for cube 2 to offset it from cube 1 (its position relative to cube1
-        XMMATRIX translationOffsetMat = XMMatrixTranslationFromVector(XMLoadFloat4(&cube2PositionOffset));
+        XMMATRIX translationOffsetMat = XMMatrixTranslationFromVector(XMLoadFloat4(&vec4ToXMFLOAT4(cube2PositionOffset)));
 
         // we want cube 2 to be half the size of cube 1, so we scale it by .5 in all dimensions
         XMMATRIX scaleMat = XMMatrixScaling(0.5f, 0.5f, 0.5f);
@@ -1332,15 +1343,15 @@ void Update()
         // finally we move it to cube 1's position, which will cause it to rotate around cube 1
         worldMat = scaleMat * translationOffsetMat * rotMat * translationMat;
 
-        wvpMat = XMLoadFloat4x4(&cube2WorldMat) * viewMat * projMat; // create wvp matrix
+        wvpMat = XMLoadFloat4x4(&mat4ToXMFLOAT4X4(cube2WorldMat)) * viewMat * projMat; // create wvp matrix
         transposed = XMMatrixTranspose(wvpMat); // must transpose wvp matrix for the gpu
-        XMStoreFloat4x4(&cb.WorldViewProj, transposed); // store transposed wvp matrix in constant buffer
+        cb.WorldViewProj = XMMATRIXTomat4(transposed); // store transposed wvp matrix in constant buffer
 
                                                         // copy our ConstantBuffer instance to the mapped constant buffer resource
         memcpy((char*)g_CbPerObjectAddress[g_FrameIndex] + ConstantBufferPerObjectAlignedSize, &cb, sizeof(cb));
 
         // store cube2's world matrix
-        XMStoreFloat4x4(&cube2WorldMat, worldMat);
+        cube2WorldMat = XMMATRIXTomat4(worldMat);
     }
 }
 
