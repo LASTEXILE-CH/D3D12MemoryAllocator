@@ -22,7 +22,6 @@
 
 #include "D3D12MemAlloc.h"
 #include "Common.h"
-#include "d3dx12.h"
 
 const wchar_t * const CLASS_NAME = L"D3D12MemAllocSample";
 const wchar_t * const WINDOW_TITLE = L"Direct3D 12 Memory Allocator Sample";
@@ -109,6 +108,49 @@ void* g_ConstantBufferAddress[FRAME_BUFFER_COUNT];
 
 CComPtr<IWICImagingFactory> g_WicImagingFactory;
 CComPtr<ID3D12Resource> g_Texture;
+
+static void SetDefaultRasterizerDesc(D3D12_RASTERIZER_DESC& outDesc)
+{
+    outDesc.FillMode = D3D12_FILL_MODE_SOLID;
+    outDesc.CullMode = D3D12_CULL_MODE_BACK;
+    outDesc.FrontCounterClockwise = FALSE;
+    outDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+    outDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+    outDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+    outDesc.DepthClipEnable = TRUE;
+    outDesc.MultisampleEnable = FALSE;
+    outDesc.AntialiasedLineEnable = FALSE;
+    outDesc.ForcedSampleCount = 0;
+    outDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+}
+
+static void SetDefaultBlendDesc(D3D12_BLEND_DESC& outDesc)
+{
+    outDesc.AlphaToCoverageEnable = FALSE;
+    outDesc.IndependentBlendEnable = FALSE;
+    const D3D12_RENDER_TARGET_BLEND_DESC defaultRenderTargetBlendDesc = {
+        FALSE,FALSE,
+        D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+        D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+        D3D12_LOGIC_OP_NOOP,
+        D3D12_COLOR_WRITE_ENABLE_ALL };
+    for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
+        outDesc.RenderTarget[i] = defaultRenderTargetBlendDesc;
+}
+
+static void SetDefaultDepthStencilDesc(D3D12_DEPTH_STENCIL_DESC& outDesc)
+{
+    outDesc.DepthEnable = TRUE;
+    outDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    outDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    outDesc.StencilEnable = FALSE;
+    outDesc.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
+    outDesc.StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK;
+    const D3D12_DEPTH_STENCILOP_DESC defaultStencilOp = {
+        D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS };
+    outDesc.FrontFace = defaultStencilOp;
+    outDesc.BackFace = defaultStencilOp;
+}
 
 DXGI_FORMAT GetDXGIFormatFromWICFormat(WICPixelFormatGUID& wicFormatGUID)
 {
@@ -812,10 +854,10 @@ void InitD3D() // initializes direct3d 12
     psoDesc.DSVFormat = DEPTH_STENCIL_FORMAT;
     psoDesc.SampleDesc = sampleDesc; // must be the same sample description as the swapchain and depth/stencil buffer
     psoDesc.SampleMask = 0xffffffff; // sample mask has to do with multi-sampling. 0xffffffff means point sampling is done
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT); // a default rasterizer state.
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT); // a default blent state.
+    SetDefaultRasterizerDesc(psoDesc.RasterizerState);
+    SetDefaultBlendDesc(psoDesc.BlendState);
     psoDesc.NumRenderTargets = 1; // we are only binding one render target
-    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    SetDefaultDepthStencilDesc(psoDesc.DepthStencilState);
 
     // create the pso
     ID3D12PipelineState* pipelineStateObject;
