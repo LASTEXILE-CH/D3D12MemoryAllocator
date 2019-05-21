@@ -106,7 +106,6 @@ CComPtr<ID3D12DescriptorHeap> g_MainDescriptorHeap[FRAME_BUFFER_COUNT];
 CComPtr<ID3D12Resource> g_ConstantBufferUploadHeap[FRAME_BUFFER_COUNT];
 void* g_ConstantBufferAddress[FRAME_BUFFER_COUNT];
 
-CComPtr<IWICImagingFactory> g_WicImagingFactory;
 CComPtr<ID3D12Resource> g_Texture;
 
 static void SetDefaultRasterizerDesc(D3D12_RASTERIZER_DESC& outDesc)
@@ -150,171 +149,6 @@ static void SetDefaultDepthStencilDesc(D3D12_DEPTH_STENCIL_DESC& outDesc)
         D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS };
     outDesc.FrontFace = defaultStencilOp;
     outDesc.BackFace = defaultStencilOp;
-}
-
-DXGI_FORMAT GetDXGIFormatFromWICFormat(WICPixelFormatGUID& wicFormatGUID)
-{
-    if (wicFormatGUID == GUID_WICPixelFormat128bppRGBAFloat) return DXGI_FORMAT_R32G32B32A32_FLOAT;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBAHalf) return DXGI_FORMAT_R16G16B16A16_FLOAT;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBA) return DXGI_FORMAT_R16G16B16A16_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppRGBA) return DXGI_FORMAT_R8G8B8A8_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppBGRA) return DXGI_FORMAT_B8G8R8A8_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppBGR) return DXGI_FORMAT_B8G8R8X8_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppRGBA1010102XR) return DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM;
-
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppRGBA1010102) return DXGI_FORMAT_R10G10B10A2_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat16bppBGRA5551) return DXGI_FORMAT_B5G5R5A1_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat16bppBGR565) return DXGI_FORMAT_B5G6R5_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppGrayFloat) return DXGI_FORMAT_R32_FLOAT;
-    else if (wicFormatGUID == GUID_WICPixelFormat16bppGrayHalf) return DXGI_FORMAT_R16_FLOAT;
-    else if (wicFormatGUID == GUID_WICPixelFormat16bppGray) return DXGI_FORMAT_R16_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat8bppGray) return DXGI_FORMAT_R8_UNORM;
-    else if (wicFormatGUID == GUID_WICPixelFormat8bppAlpha) return DXGI_FORMAT_A8_UNORM;
-
-    else return DXGI_FORMAT_UNKNOWN;
-}
-
-WICPixelFormatGUID GetConvertToWICFormat(WICPixelFormatGUID& wicFormatGUID)
-{
-    if (wicFormatGUID == GUID_WICPixelFormatBlackWhite) return GUID_WICPixelFormat8bppGray;
-    else if (wicFormatGUID == GUID_WICPixelFormat1bppIndexed) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat2bppIndexed) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat4bppIndexed) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat8bppIndexed) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat2bppGray) return GUID_WICPixelFormat8bppGray;
-    else if (wicFormatGUID == GUID_WICPixelFormat4bppGray) return GUID_WICPixelFormat8bppGray;
-    else if (wicFormatGUID == GUID_WICPixelFormat16bppGrayFixedPoint) return GUID_WICPixelFormat16bppGrayHalf;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppGrayFixedPoint) return GUID_WICPixelFormat32bppGrayFloat;
-    else if (wicFormatGUID == GUID_WICPixelFormat16bppBGR555) return GUID_WICPixelFormat16bppBGRA5551;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppBGR101010) return GUID_WICPixelFormat32bppRGBA1010102;
-    else if (wicFormatGUID == GUID_WICPixelFormat24bppBGR) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat24bppRGB) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppPBGRA) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppPRGBA) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat48bppRGB) return GUID_WICPixelFormat64bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat48bppBGR) return GUID_WICPixelFormat64bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppBGRA) return GUID_WICPixelFormat64bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppPRGBA) return GUID_WICPixelFormat64bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppPBGRA) return GUID_WICPixelFormat64bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat48bppRGBFixedPoint) return GUID_WICPixelFormat64bppRGBAHalf;
-    else if (wicFormatGUID == GUID_WICPixelFormat48bppBGRFixedPoint) return GUID_WICPixelFormat64bppRGBAHalf;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBAFixedPoint) return GUID_WICPixelFormat64bppRGBAHalf;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppBGRAFixedPoint) return GUID_WICPixelFormat64bppRGBAHalf;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBFixedPoint) return GUID_WICPixelFormat64bppRGBAHalf;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBHalf) return GUID_WICPixelFormat64bppRGBAHalf;
-    else if (wicFormatGUID == GUID_WICPixelFormat48bppRGBHalf) return GUID_WICPixelFormat64bppRGBAHalf;
-    else if (wicFormatGUID == GUID_WICPixelFormat128bppPRGBAFloat) return GUID_WICPixelFormat128bppRGBAFloat;
-    else if (wicFormatGUID == GUID_WICPixelFormat128bppRGBFloat) return GUID_WICPixelFormat128bppRGBAFloat;
-    else if (wicFormatGUID == GUID_WICPixelFormat128bppRGBAFixedPoint) return GUID_WICPixelFormat128bppRGBAFloat;
-    else if (wicFormatGUID == GUID_WICPixelFormat128bppRGBFixedPoint) return GUID_WICPixelFormat128bppRGBAFloat;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppRGBE) return GUID_WICPixelFormat128bppRGBAFloat;
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppCMYK) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppCMYK) return GUID_WICPixelFormat64bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat40bppCMYKAlpha) return GUID_WICPixelFormat64bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat80bppCMYKAlpha) return GUID_WICPixelFormat64bppRGBA;
-
-#if (_WIN32_WINNT >= _WIN32_WINNT_WIN8) || defined(_WIN7_PLATFORM_UPDATE)
-    else if (wicFormatGUID == GUID_WICPixelFormat32bppRGB) return GUID_WICPixelFormat32bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppRGB) return GUID_WICPixelFormat64bppRGBA;
-    else if (wicFormatGUID == GUID_WICPixelFormat64bppPRGBAHalf) return GUID_WICPixelFormat64bppRGBAHalf;
-#endif
-
-    else return GUID_WICPixelFormatDontCare;
-}
-
-size_t GetDXGIFormatBitsPerPixel(DXGI_FORMAT& dxgiFormat)
-{
-    if (dxgiFormat == DXGI_FORMAT_R32G32B32A32_FLOAT) return 128;
-    else if (dxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT) return 64;
-    else if (dxgiFormat == DXGI_FORMAT_R16G16B16A16_UNORM) return 64;
-    else if (dxgiFormat == DXGI_FORMAT_R8G8B8A8_UNORM) return 32;
-    else if (dxgiFormat == DXGI_FORMAT_B8G8R8A8_UNORM) return 32;
-    else if (dxgiFormat == DXGI_FORMAT_B8G8R8X8_UNORM) return 32;
-    else if (dxgiFormat == DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM) return 32;
-
-    else if (dxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM) return 32;
-    else if (dxgiFormat == DXGI_FORMAT_B5G5R5A1_UNORM) return 16;
-    else if (dxgiFormat == DXGI_FORMAT_B5G6R5_UNORM) return 16;
-    else if (dxgiFormat == DXGI_FORMAT_R32_FLOAT) return 32;
-    else if (dxgiFormat == DXGI_FORMAT_R16_FLOAT) return 16;
-    else if (dxgiFormat == DXGI_FORMAT_R16_UNORM) return 16;
-    else if (dxgiFormat == DXGI_FORMAT_R8_UNORM) return 8;
-    else if (dxgiFormat == DXGI_FORMAT_A8_UNORM) return 8;
-
-    assert(0);
-    return 0;
-}
-
-size_t LoadImageDataFromFile(
-    const wchar_t* filePath,
-    std::vector<char>& imageData,
-    D3D12_RESOURCE_DESC& resourceDescription,
-    size_t &bytesPerRow)
-{
-    CComPtr<IWICBitmapDecoder> decoder;
-    CHECK_HR( g_WicImagingFactory->CreateDecoderFromFilename(
-        filePath,
-        NULL,
-        GENERIC_READ,
-        WICDecodeMetadataCacheOnLoad,
-        &decoder) );
-
-    CComPtr<IWICBitmapFrameDecode> frame;
-    CHECK_HR( decoder->GetFrame(0, &frame) );
-
-    WICPixelFormatGUID pixelFormat;
-    CHECK_HR( frame->GetPixelFormat(&pixelFormat) );
-
-    UINT sizeX, sizeY;
-    CHECK_HR( frame->GetSize(&sizeX, &sizeY) );
-
-    DXGI_FORMAT dxgiFormat = GetDXGIFormatFromWICFormat(pixelFormat);
-
-    IWICFormatConverter *wicConverter = NULL;
-    if (dxgiFormat == DXGI_FORMAT_UNKNOWN)
-    {
-        WICPixelFormatGUID convertToPixelFormat = GetConvertToWICFormat(pixelFormat);
-        assert(convertToPixelFormat != GUID_WICPixelFormatDontCare);
-        dxgiFormat = GetDXGIFormatFromWICFormat(convertToPixelFormat);
-
-        CHECK_HR( g_WicImagingFactory->CreateFormatConverter(&wicConverter) );
-
-        BOOL canConvert = FALSE;
-        CHECK_HR( wicConverter->CanConvert(pixelFormat, convertToPixelFormat, &canConvert) );
-        assert(canConvert);
-
-        CHECK_HR( wicConverter->Initialize(frame, convertToPixelFormat, WICBitmapDitherTypeErrorDiffusion, 0, 0, WICBitmapPaletteTypeCustom) );
-    }
-
-    size_t bitsPerPixel = GetDXGIFormatBitsPerPixel(dxgiFormat);
-    bytesPerRow = (sizeX * bitsPerPixel) / 8;
-    size_t imageSize = bytesPerRow * sizeY;
-
-    imageData.resize(imageSize);
-
-    if (wicConverter)
-    {
-        CHECK_HR( wicConverter->CopyPixels(0, (UINT)bytesPerRow, (UINT)imageSize, (BYTE*)imageData.data()) );
-    }
-    else
-    {
-        CHECK_HR( frame->CopyPixels(0, (UINT)bytesPerRow, (UINT)imageSize, (BYTE*)imageData.data()) );
-    }
-
-    resourceDescription = {};
-    resourceDescription.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    resourceDescription.Alignment = 0;
-    resourceDescription.Width = sizeX;
-    resourceDescription.Height = sizeY;
-    resourceDescription.DepthOrArraySize = 1;
-    resourceDescription.MipLevels = 1;
-    resourceDescription.Format = dxgiFormat;
-    resourceDescription.SampleDesc.Count = 1;
-    resourceDescription.SampleDesc.Quality = 0;
-    resourceDescription.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-    resourceDescription.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-    return imageSize;
 }
 
 ID3DBlob* CompileShader(
@@ -486,12 +320,6 @@ inline UINT64 UpdateSubresources_2(
 
 void InitD3D() // initializes direct3d 12
 {
-    CHECK_HR( CoCreateInstance(
-        CLSID_WICImagingFactory,
-        NULL,
-        CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&g_WicImagingFactory)) );
-
     IDXGIFactory4* dxgiFactory;
     CHECK_HR( CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)) );
 
@@ -825,8 +653,8 @@ void InitD3D() // initializes direct3d 12
     const D3D12_INPUT_ELEMENT_DESC inputLayout[] =
     {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     // create a pipeline state object (PSO)
@@ -870,39 +698,39 @@ void InitD3D() // initializes direct3d 12
     Vertex vList[] = {
         // front face
         { -0.5f,  0.5f, -0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-    {  0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-    { -0.5f, -0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-    {  0.5f,  0.5f, -0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        {  0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
+        { -0.5f, -0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
+        {  0.5f,  0.5f, -0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
 
-    // right side face
-    {  0.5f, -0.5f, -0.5f, 0.f, 1.f, 1.0f, 0.0f, 0.0f, 1.0f },
-    {  0.5f,  0.5f,  0.5f, 1.f, 0.f, 1.0f, 0.0f, 1.0f, 1.0f },
-    {  0.5f, -0.5f,  0.5f, 1.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-    {  0.5f,  0.5f, -0.5f, 0.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        // right side face
+        {  0.5f, -0.5f, -0.5f, 0.f, 1.f, 1.0f, 0.0f, 0.0f, 1.0f },
+        {  0.5f,  0.5f,  0.5f, 1.f, 0.f, 1.0f, 0.0f, 1.0f, 1.0f },
+        {  0.5f, -0.5f,  0.5f, 1.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
+        {  0.5f,  0.5f, -0.5f, 0.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
 
-    // left side face
-    { -0.5f,  0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-    { -0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-    { -0.5f, -0.5f,  0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-    { -0.5f,  0.5f, -0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        // left side face
+        { -0.5f,  0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
+        { -0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
+        { -0.5f, -0.5f,  0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
+        { -0.5f,  0.5f, -0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
 
-    // back face
-    {  0.5f,  0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-    { -0.5f, -0.5f,  0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-    {  0.5f, -0.5f,  0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-    { -0.5f,  0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        // back face
+        {  0.5f,  0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
+        { -0.5f, -0.5f,  0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
+        {  0.5f, -0.5f,  0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
+        { -0.5f,  0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
 
-    // top face
-    { -0.5f,  0.5f, -0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-    {  0.5f,  0.5f,  0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-    {  0.5f,  0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-    { -0.5f,  0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        // top face
+        { -0.5f,  0.5f, -0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
+        {  0.5f,  0.5f,  0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
+        {  0.5f,  0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
+        { -0.5f,  0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
 
-    // bottom face
-    {  0.5f, -0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-    { -0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-    {  0.5f, -0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-    { -0.5f, -0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        // bottom face
+        {  0.5f, -0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
+        { -0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
+        {  0.5f, -0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
+        { -0.5f, -0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
     };
     const uint32_t vBufferSize = sizeof(vList);
 
@@ -1167,13 +995,53 @@ void InitD3D() // initializes direct3d 12
     cube2RotMat = mat4::Identity(); // initialize cube2's rotation matrix to identity matrix
     cube2WorldMat = tmpMat; // store cube2's world matrix
 
-                                             // # TEXTURE
+    // # TEXTURE
 
     D3D12_RESOURCE_DESC textureDesc;
     size_t imageBytesPerRow;
+    size_t imageSize = SIZE_MAX;
     std::vector<char> imageData;
-    size_t imageSize = LoadImageDataFromFile(L"TestCard 256x256.png", imageData, textureDesc, imageBytesPerRow);
-    assert(imageSize > 0);
+    {
+        const UINT sizeX = 256;
+        const UINT sizeY = 256;
+        const DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        const UINT bytesPerPixel = 4;
+
+        imageBytesPerRow = sizeX * bytesPerPixel;
+        imageSize = sizeY * imageBytesPerRow;
+
+        imageData.resize(imageSize);
+        char* rowPtr = (char*)imageData.data();
+        for(UINT y = 0; y < sizeY; ++y)
+        {
+            char* pixelPtr = rowPtr;
+            for(UINT x = 0; x < sizeX; ++x)
+            {
+                *(UINT8*)(pixelPtr    ) = (UINT8)x; // R
+                *(UINT8*)(pixelPtr + 1) = (UINT8)y; // G
+                *(UINT8*)(pixelPtr + 2) = 0x00; // B
+                *(UINT8*)(pixelPtr + 3) = 0xFF; // A
+
+                *(UINT8*)(pixelPtr    ) = x > 128 ? 0xFF : 00;
+                *(UINT8*)(pixelPtr + 1) = y > 128 ? 0xFF : 00;
+                pixelPtr += bytesPerPixel;
+            }
+            rowPtr += imageBytesPerRow;
+        }
+
+        textureDesc = {};
+        textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        textureDesc.Alignment = 0;
+        textureDesc.Width = sizeX;
+        textureDesc.Height = sizeY;
+        textureDesc.DepthOrArraySize = 1;
+        textureDesc.MipLevels = 1;
+        textureDesc.Format = format;
+        textureDesc.SampleDesc.Count = 1;
+        textureDesc.SampleDesc.Quality = 0;
+        textureDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    }
 
     D3D12_HEAP_PROPERTIES textureHeapProps = {};
     textureHeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -1494,8 +1362,6 @@ void Cleanup() // release com ojects and clean up memory
     }
     g_Device.Release();
     g_SwapChain.Release();
-
-    g_WicImagingFactory.Release();
 }
 
 static void OnKeyDown(WPARAM key)
