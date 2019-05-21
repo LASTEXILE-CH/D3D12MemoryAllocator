@@ -321,6 +321,127 @@ void WaitGPUIdle(size_t frameIndex)
     WaitForFrame(frameIndex);
 }
 
+// Row-by-row memcpy
+inline void MemcpySubresource_2(
+    _In_ const D3D12_MEMCPY_DEST* pDest,
+    _In_ const D3D12_SUBRESOURCE_DATA* pSrc,
+    SIZE_T RowSizeInBytes,
+    UINT NumRows,
+    UINT NumSlices)
+{
+    for (UINT z = 0; z < NumSlices; ++z)
+    {
+        BYTE* pDestSlice = reinterpret_cast<BYTE*>(pDest->pData) + pDest->SlicePitch * z;
+        const BYTE* pSrcSlice = reinterpret_cast<const BYTE*>(pSrc->pData) + pSrc->SlicePitch * z;
+        for (UINT y = 0; y < NumRows; ++y)
+        {
+            memcpy(pDestSlice + pDest->RowPitch * y,
+                pSrcSlice + pSrc->RowPitch * y,
+                RowSizeInBytes);
+        }
+    }
+}
+
+inline UINT64 UpdateSubresources_2(
+    _In_ ID3D12GraphicsCommandList* pCmdList,
+    _In_ ID3D12Resource* pDestinationResource,
+    _In_ ID3D12Resource* pIntermediate,
+    _In_range_(0,D3D12_REQ_SUBRESOURCES) UINT FirstSubresource,
+    _In_range_(0,D3D12_REQ_SUBRESOURCES-FirstSubresource) UINT NumSubresources,
+    UINT64 RequiredSize,
+    _In_reads_(NumSubresources) const D3D12_PLACED_SUBRESOURCE_FOOTPRINT* pLayouts,
+    _In_reads_(NumSubresources) const UINT* pNumRows,
+    _In_reads_(NumSubresources) const UINT64* pRowSizesInBytes,
+    _In_reads_(NumSubresources) const D3D12_SUBRESOURCE_DATA* pSrcData)
+{
+    // Minor validation
+    D3D12_RESOURCE_DESC IntermediateDesc = pIntermediate->GetDesc();
+    D3D12_RESOURCE_DESC DestinationDesc = pDestinationResource->GetDesc();
+    if (IntermediateDesc.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER || 
+        IntermediateDesc.Width < RequiredSize + pLayouts[0].Offset || 
+        RequiredSize > (SIZE_T)-1 || 
+        (DestinationDesc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER && 
+        (FirstSubresource != 0 || NumSubresources != 1)))
+    {
+        return 0;
+    }
+
+    BYTE* pData;
+    HRESULT hr = pIntermediate->Map(0, NULL, reinterpret_cast<void**>(&pData));
+    if (FAILED(hr))
+    {
+        return 0;
+    }
+
+    for (UINT i = 0; i < NumSubresources; ++i)
+    {
+        if (pRowSizesInBytes[i] > (SIZE_T)-1) return 0;
+        D3D12_MEMCPY_DEST DestData = { pData + pLayouts[i].Offset, pLayouts[i].Footprint.RowPitch, pLayouts[i].Footprint.RowPitch * pNumRows[i] };
+        MemcpySubresource_2(&DestData, &pSrcData[i], (SIZE_T)pRowSizesInBytes[i], pNumRows[i], pLayouts[i].Footprint.Depth);
+    }
+    pIntermediate->Unmap(0, NULL);
+
+    if (DestinationDesc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
+    {
+        D3D12_BOX SrcBox = {
+            UINT( pLayouts[0].Offset ), 0, 0,
+            UINT( pLayouts[0].Offset + pLayouts[0].Footprint.Width ), 0, 0 };
+        pCmdList->CopyBufferRegion(
+            pDestinationResource, 0, pIntermediate, pLayouts[0].Offset, pLayouts[0].Footprint.Width);
+    }
+    else
+    {
+        for (UINT i = 0; i < NumSubresources; ++i)
+        {
+            D3D12_TEXTURE_COPY_LOCATION Dst = {};
+            Dst.pResource = pDestinationResource;
+            Dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            Dst.SubresourceIndex = i + FirstSubresource;
+            D3D12_TEXTURE_COPY_LOCATION Src = {};
+            Src.pResource = pIntermediate;
+            Src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            Src.PlacedFootprint = pLayouts[i];
+            pCmdList->CopyTextureRegion(&Dst, 0, 0, 0, &Src, nullptr);
+        }
+    }
+    return RequiredSize;
+}
+
+inline UINT64 UpdateSubresources_2( 
+    _In_ ID3D12GraphicsCommandList* pCmdList,
+    _In_ ID3D12Resource* pDestinationResource,
+    _In_ ID3D12Resource* pIntermediate,
+    UINT64 IntermediateOffset,
+    _In_range_(0,D3D12_REQ_SUBRESOURCES) UINT FirstSubresource,
+    _In_range_(0,D3D12_REQ_SUBRESOURCES-FirstSubresource) UINT NumSubresources,
+    _In_reads_(NumSubresources) D3D12_SUBRESOURCE_DATA* pSrcData)
+{
+    UINT64 RequiredSize = 0;
+    UINT64 MemToAlloc = static_cast<UINT64>(sizeof(D3D12_PLACED_SUBRESOURCE_FOOTPRINT) + sizeof(UINT) + sizeof(UINT64)) * NumSubresources;
+    if (MemToAlloc > SIZE_MAX)
+    {
+        return 0;
+    }
+    void* pMem = HeapAlloc(GetProcessHeap(), 0, static_cast<SIZE_T>(MemToAlloc));
+    if (pMem == NULL)
+    {
+        return 0;
+    }
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT* pLayouts = reinterpret_cast<D3D12_PLACED_SUBRESOURCE_FOOTPRINT*>(pMem);
+    UINT64* pRowSizesInBytes = reinterpret_cast<UINT64*>(pLayouts + NumSubresources);
+    UINT* pNumRows = reinterpret_cast<UINT*>(pRowSizesInBytes + NumSubresources);
+
+    D3D12_RESOURCE_DESC Desc = pDestinationResource->GetDesc();
+    ID3D12Device* pDevice;
+    pDestinationResource->GetDevice(__uuidof(*pDevice), reinterpret_cast<void**>(&pDevice));
+    pDevice->GetCopyableFootprints(&Desc, FirstSubresource, NumSubresources, IntermediateOffset, pLayouts, pNumRows, pRowSizesInBytes, &RequiredSize);
+    pDevice->Release();
+
+    UINT64 Result = UpdateSubresources_2(pCmdList, pDestinationResource, pIntermediate, FirstSubresource, NumSubresources, RequiredSize, pLayouts, pNumRows, pRowSizesInBytes, pSrcData);
+    HeapFree(GetProcessHeap(), 0, pMem);
+    return Result;
+}
+
 void InitD3D() // initializes direct3d 12
 {
     CHECK_HR( CoCreateInstance(
@@ -575,15 +696,15 @@ void InitD3D() // initializes direct3d 12
     sampler.RegisterSpace = 0;
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-    rootSignatureDesc.Init(
-        _countof(rootParameters), rootParameters,
-        1,
-        &sampler,
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
+    rootSignatureDesc.NumParameters = _countof(rootParameters);
+    rootSignatureDesc.pParameters = rootParameters;
+    rootSignatureDesc.NumStaticSamplers = 1;
+    rootSignatureDesc.pStaticSamplers = &sampler;
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
     CComPtr<ID3DBlob> signatureBlob;
     ID3DBlob* signatureBlobPtr;
@@ -812,11 +933,17 @@ void InitD3D() // initializes direct3d 12
 
     // we are now creating a command with the command list to copy the data from
     // the upload heap to the default heap
-    UINT64 r = UpdateSubresources(g_CommandList, g_VertexBuffer, vBufferUploadHeap, 0, 0, 1, &vertexData);
+    UINT64 r = UpdateSubresources_2(g_CommandList, g_VertexBuffer, vBufferUploadHeap, 0, 0, 1, &vertexData);
     assert(r);
 
     // transition the vertex buffer data from copy destination state to vertex buffer state
-    g_CommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_VertexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+    D3D12_RESOURCE_BARRIER vbBarrier = {};
+    vbBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    vbBarrier.Transition.pResource = g_VertexBuffer;
+    vbBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    vbBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    vbBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    g_CommandList->ResourceBarrier(1, &vbBarrier);
 
     // Create index buffer
 
@@ -910,14 +1037,17 @@ void InitD3D() // initializes direct3d 12
 
                                         // we are now creating a command with the command list to copy the data from
                                         // the upload heap to the default heap
-    r = UpdateSubresources(g_CommandList, g_IndexBuffer, iBufferUploadHeap, 0, 0, 1, &indexData);
+    r = UpdateSubresources_2(g_CommandList, g_IndexBuffer, iBufferUploadHeap, 0, 0, 1, &indexData);
     assert(r);
 
-    // transition the vertex buffer data from copy destination state to vertex buffer state
-    g_CommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
-        g_IndexBuffer,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        D3D12_RESOURCE_STATE_INDEX_BUFFER));
+    // transition the index buffer data from copy destination state to vertex buffer state
+    D3D12_RESOURCE_BARRIER ibBarrier = {};
+    ibBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    ibBarrier.Transition.pResource = g_IndexBuffer;
+    ibBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    ibBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_INDEX_BUFFER;
+    ibBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    g_CommandList->ResourceBarrier(1, &ibBarrier);
 
     // create a vertex buffer view for the triangle. We get the GPU memory address to the vertex pointer using the GetGPUVirtualAddress() method
     g_VertexBufferView.BufferLocation = g_VertexBuffer->GetGPUVirtualAddress();
@@ -1056,12 +1186,15 @@ void InitD3D() // initializes direct3d 12
     textureSubresourceData.RowPitch = imageBytesPerRow;
     textureSubresourceData.SlicePitch = imageBytesPerRow * textureDesc.Height;
 
-    UpdateSubresources(g_CommandList, g_Texture, textureUpload, 0, 0, 1, &textureSubresourceData);
+    UpdateSubresources_2(g_CommandList, g_Texture, textureUpload, 0, 0, 1, &textureSubresourceData);
 
-    g_CommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
-        g_Texture,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+    D3D12_RESOURCE_BARRIER textureBarrier = {};
+    textureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    textureBarrier.Transition.pResource = g_Texture;
+    textureBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    textureBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    textureBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    g_CommandList->ResourceBarrier(1, &textureBarrier);
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -1070,10 +1203,10 @@ void InitD3D() // initializes direct3d 12
     srvDesc.Texture2D.MipLevels = 1;
     for (size_t i = 0; i < FRAME_BUFFER_COUNT; ++i)
     {
-        g_Device->CreateShaderResourceView(g_Texture, &srvDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE(
-            g_MainDescriptorHeap[i]->GetCPUDescriptorHandleForHeapStart(),
-            1,
-            g_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)));
+        D3D12_CPU_DESCRIPTOR_HANDLE descHandle = {
+            g_MainDescriptorHeap[i]->GetCPUDescriptorHandleForHeapStart().ptr +
+            g_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)};
+        g_Device->CreateShaderResourceView(g_Texture, &srvDesc, descHandle);
     }
 
     // # END OF INITIAL COMMAND LIST
@@ -1196,11 +1329,19 @@ void Render() // execute the command list
     // here we start recording commands into the g_CommandList (which all the commands will be stored in the g_CommandAllocators)
 
     // transition the "g_FrameIndex" render target from the present state to the render target state so the command list draws to it starting from here
-    g_CommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_RenderTargets[g_FrameIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+    D3D12_RESOURCE_BARRIER presentToRenderTargetBarrier = {};
+    presentToRenderTargetBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    presentToRenderTargetBarrier.Transition.pResource = g_RenderTargets[g_FrameIndex];
+    presentToRenderTargetBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+    presentToRenderTargetBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    presentToRenderTargetBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    g_CommandList->ResourceBarrier(1, &presentToRenderTargetBarrier);
 
     // here we again get the handle to our current render target view so we can set it as the render target in the output merger stage of the pipeline
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(g_RtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), g_FrameIndex, g_RtvDescriptorSize);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(g_DepthStencilDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = {
+        g_RtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr + g_FrameIndex * g_RtvDescriptorSize};
+    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+        g_DepthStencilDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 
     // set the render target for the output merger stage (the output of the pipeline)
     g_CommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
@@ -1241,7 +1382,13 @@ void Render() // execute the command list
 
     // transition the "g_FrameIndex" render target from the render target state to the present state. If the debug layer is enabled, you will receive a
     // warning if present is called on the render target when it's not in the present state
-    g_CommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_RenderTargets[g_FrameIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+    D3D12_RESOURCE_BARRIER renderTargetToPresentBarrier = {};
+    renderTargetToPresentBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    renderTargetToPresentBarrier.Transition.pResource = g_RenderTargets[g_FrameIndex];
+    renderTargetToPresentBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    renderTargetToPresentBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+    renderTargetToPresentBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    g_CommandList->ResourceBarrier(1, &renderTargetToPresentBarrier);
 
     CHECK_HR( g_CommandList->Close() );
 
