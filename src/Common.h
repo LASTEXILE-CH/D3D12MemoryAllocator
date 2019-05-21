@@ -26,7 +26,6 @@
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <d3d12sdklayers.h>
-#include "d3dx12.h"
 
 #include <DirectXMath.h>
 using namespace DirectX;
