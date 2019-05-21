@@ -436,7 +436,7 @@ void InitD3D() // initializes direct3d 12
 
     // get a handle to the first descriptor in the descriptor heap. a handle is basically a pointer,
     // but we cannot literally use it like a c++ pointer.
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(g_RtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle { g_RtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart() };
 
     // Create a RTV for each buffer (double buffering is two buffers, tripple buffering is 3).
     for (int i = 0; i < FRAME_BUFFER_COUNT; i++)
@@ -451,7 +451,7 @@ void InitD3D() // initializes direct3d 12
         g_Device->CreateRenderTargetView(g_RenderTargets[i], nullptr, rtvHandle);
 
         // we increment the rtv handle by the rtv descriptor size we got above
-        rtvHandle.Offset(1, g_RtvDescriptorSize);
+        rtvHandle.ptr += g_RtvDescriptorSize;
     }
 
     // -- Create the Command Allocators -- //
@@ -532,15 +532,15 @@ void InitD3D() // initializes direct3d 12
     D3D12_ROOT_PARAMETER  rootParameters[3]; // only one parameter right now
 
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; // this is a descriptor table
-    rootParameters[0].DescriptorTable = CD3DX12_ROOT_DESCRIPTOR_TABLE(1, &cbDescriptorRange);
+    rootParameters[0].DescriptorTable = {1, &cbDescriptorRange};
     rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX; // our pixel shader will be the only shader accessing this parameter for now
 
     rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    rootParameters[1].Descriptor = CD3DX12_ROOT_DESCRIPTOR(1);
+    rootParameters[1].Descriptor = {1, 0};
     rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
     rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    rootParameters[2].DescriptorTable = CD3DX12_ROOT_DESCRIPTOR_TABLE(1, &textureDescRange);
+    rootParameters[2].DescriptorTable = {1, &textureDescRange};
     rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     // create root signature
@@ -607,7 +607,7 @@ void InitD3D() // initializes direct3d 12
         cbvDesc.SizeInBytes = AlignUp<UINT>(sizeof(ConstantBuffer), 256);
         g_Device->CreateConstantBufferView(&cbvDesc, g_MainDescriptorHeap[i]->GetCPUDescriptorHandleForHeapStart());
 
-        CD3DX12_RANGE readRange(0, 0);
+        D3D12_RANGE readRange{0, 0};
         CHECK_HR( g_ConstantBufferUploadHeap[i]->Map(0, &readRange, &g_ConstantBufferAddress[i]) );
     }
 
@@ -857,7 +857,7 @@ void InitD3D() // initializes direct3d 12
             IID_PPV_ARGS(&g_CbPerObjectUploadHeaps[i])) );
         g_CbPerObjectUploadHeaps[i]->SetName(L"Constant Buffer Upload Resource Heap");
 
-        CD3DX12_RANGE readRange(0, 0);    // We do not intend to read from this resource on the CPU. (so end is less than or equal to begin)
+        D3D12_RANGE readRange{0, 0};    // We do not intend to read from this resource on the CPU. (so end is less than or equal to begin)
                                           // map the resource heap to get a gpu virtual address to the beginning of the heap
         CHECK_HR( g_CbPerObjectUploadHeaps[i]->Map(0, &readRange, &g_CbPerObjectAddress[i]) );
     }
@@ -1107,10 +1107,10 @@ void Render() // execute the command list
     g_CommandList->SetGraphicsRootDescriptorTable(0, g_MainDescriptorHeap[g_FrameIndex]->GetGPUDescriptorHandleForHeapStart());
     g_CommandList->SetGraphicsRootDescriptorTable(2, g_MainDescriptorHeap[g_FrameIndex]->GetGPUDescriptorHandleForHeapStart());
 
-    CD3DX12_VIEWPORT viewport{0.f, 0.f, (float)SIZE_X, (float)SIZE_Y, 0.f, 1.f};
+    D3D12_VIEWPORT viewport{0.f, 0.f, (float)SIZE_X, (float)SIZE_Y, 0.f, 1.f};
     g_CommandList->RSSetViewports(1, &viewport); // set the viewports
 
-    CD3DX12_RECT scissorRect{0, 0, SIZE_X, SIZE_Y};
+    D3D12_RECT scissorRect{0, 0, SIZE_X, SIZE_Y};
     g_CommandList->RSSetScissorRects(1, &scissorRect); // set the scissor rects
 
     g_CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // set the primitive topology
