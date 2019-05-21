@@ -27,9 +27,6 @@
 #include <d3dcompiler.h>
 #include <d3d12sdklayers.h>
 
-#include <DirectXMath.h>
-using namespace DirectX;
-
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -92,6 +89,26 @@ static inline T AlignUp(T val, T align)
 
 static const float PI = 3.14159265358979323846264338327950288419716939937510582f;
 
+struct vec2
+{
+    float x, y;
+
+    vec2() { }
+    vec2(float x, float y) : x(x), y(y) { }
+
+    float& operator[](uint32_t index) { return *(&x + index); }
+    const float& operator[](uint32_t index) const { return *(&x + index); }
+
+    vec2 operator+(const vec2& rhs) const { return vec2(x + rhs.x, y + rhs.y); }
+    vec2 operator-(const vec2& rhs) const { return vec2(x - rhs.x, y - rhs.y); }
+    vec2 operator*(float s) const { return vec2(x * s, y * s); }
+
+    vec2 Normalized() const
+    {
+        return (*this) * (1.f / sqrt(x * x + y * y));
+    }
+};
+
 struct vec3
 {
     float x, y, z;
@@ -134,6 +151,10 @@ struct vec4
 
     float& operator[](uint32_t index) { return *(&x + index); }
     const float& operator[](uint32_t index) const { return *(&x + index); }
+
+    vec4 operator+(const vec4& rhs) const { return vec4(x + rhs.x, y + rhs.y, z + rhs.z, w + rhs.w); }
+    vec4 operator-(const vec4& rhs) const { return vec4(x - rhs.x, y - rhs.y, z - rhs.z, w - rhs.w); }
+    vec4 operator*(float s) const { return vec4(x * s, y * s, z * s, w * s); }
 };
 
 struct mat4
@@ -200,7 +221,72 @@ struct mat4
             _41 * rhs._14 + _42 * rhs._24 + _43 * rhs._34 + _44 * rhs._44);
     }
 
+    static mat4 Identity()
+    {
+        return mat4(
+            1.f, 0.f, 0.f, 0.f,
+            0.f, 1.f, 0.f, 0.f,
+            0.f, 0.f, 1.f, 0.f,
+            0.f, 0.f, 0.f, 1.f);
+    }
+
+    static mat4 Translation(const vec3& v)
+    {
+        return mat4(
+            1.f, 0.f, 0.f, 0.f,
+            0.f, 1.f, 0.f, 0.f,
+            0.f, 0.f, 1.f, 0.f,
+            v.x, v.y, v.z, 1.f);
+    }
+
+    static mat4 Translation(const vec4& v)
+    {
+        return mat4(
+            1.f, 0.f, 0.f, 0.f,
+            0.f, 1.f, 0.f, 0.f,
+            0.f, 0.f, 1.f, 0.f,
+            v.x, v.y, v.z, v.w);
+    }
+
+    static mat4 Scaling(float s)
+    {
+        return mat4(
+            s,   0.f, 0.f, 0.f,
+            0.f, s,   0.f, 0.f,
+            0.f, 0.f, s,   0.f,
+            0.f, 0.f, 0.f, 1.f);
+    }
+
+    static mat4 Scaling(const vec3& s)
+    {
+        return mat4(
+            s.x, 0.f, 0.f, 0.f,
+            0.f, s.y, 0.f, 0.f,
+            0.f, 0.f, s.z, 0.f,
+            0.f, 0.f, 0.f, 1.f);
+    }
+
+    static mat4 RotationX(float angle)
+    {
+        const float s = sin(angle), c = cos(angle);
+        return mat4(
+            1.f, 0.f, 0.f, 0.f,
+            0.f, c,   s,   0.f,
+            0.f, -s,  c,   0.f,
+            0.f, 0.f, 0.f, 1.f);
+    }
+
     static mat4 RotationY(float angle)
+    {
+        const float s = sin(angle), c = cos(angle);
+        return mat4(
+            c,   s,  0.f,  0.f,
+            -s,  c,  0.f,  0.f,
+            0.f, 0.f, 1.f, 0.f,
+            0.f, 0.f, 0.f, 1.f);
+    }
+
+    static mat4 RotationZ(float angle)
     {
         const float s = sin(angle), c = cos(angle);
         return mat4(
@@ -231,6 +317,15 @@ struct mat4
             xAxis.y, yAxis.y, zAxis.y, 0.0f,
             xAxis.z, yAxis.z, zAxis.z, 0.0f,
             -Dot(xAxis, eye), -Dot(yAxis, eye), -Dot(zAxis, eye), 1.0f);
+    }
+
+    mat4 Transposed() const
+    {
+        return mat4(
+            _11, _21, _31, _41,
+            _12, _22, _32, _42,
+            _13, _23, _33, _43,
+            _14, _24, _34, _44);
     }
 };
 
