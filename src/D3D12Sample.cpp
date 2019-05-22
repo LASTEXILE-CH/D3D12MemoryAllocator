@@ -43,6 +43,8 @@ const size_t FRAME_BUFFER_COUNT = 3; // number of buffers we want, 2 for double 
 static const D3D_FEATURE_LEVEL MY_D3D_FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
 
 const bool ENABLE_DEBUG_LAYER = true;
+const bool ENABLE_CPU_ALLOCATION_CALLBACKS = true;
+const bool ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT = true;
 
 HINSTANCE g_Instance;
 HWND g_Wnd;
@@ -53,6 +55,7 @@ float g_Time;
 float g_TimeDelta;
 
 CComPtr<ID3D12Device> g_Device; // direct3d g_Device
+D3D12MA::Allocator* g_Allocator;
 CComPtr<IDXGISwapChain3> g_SwapChain; // swapchain used to switch between render targets
 CComPtr<ID3D12CommandQueue> g_CommandQueue; // container for command lists
 CComPtr<ID3D12DescriptorHeap> g_RtvDescriptorHeap; // a descriptor heap to hold resources like the render targets
@@ -114,6 +117,29 @@ CComPtr<ID3D12Resource> g_ConstantBufferUploadHeap[FRAME_BUFFER_COUNT];
 void* g_ConstantBufferAddress[FRAME_BUFFER_COUNT];
 
 CComPtr<ID3D12Resource> g_Texture;
+
+static void* const CUSTOM_ALLOCATION_USER_DATA = (void*)(uintptr_t)0xDEADC0DE;
+
+static void* CustomAllocate(size_t Size, size_t Alignment, void* pUserData)
+{
+    assert(pUserData == CUSTOM_ALLOCATION_USER_DATA);
+    void* memory = _aligned_malloc(Size, Alignment);
+    if(ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT)
+    {
+        wprintf(L"Allocate Size=%llu Alignment=%llu -> %p\n", Size, Alignment, memory);
+    }
+    return memory;
+}
+
+static void CustomFree(void* pMemory, void* pUserData)
+{
+    assert(pUserData == CUSTOM_ALLOCATION_USER_DATA);
+    if(ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT && pMemory)
+    {
+        wprintf(L"Free %p\n", pMemory);
+    }
+    _aligned_free(pMemory);
+}
 
 static void SetDefaultRasterizerDesc(D3D12_RASTERIZER_DESC& outDesc)
 {
@@ -347,6 +373,25 @@ void InitD3D() // initializes direct3d 12
         MY_D3D_FEATURE_LEVEL,
         IID_PPV_ARGS(&device)) );
     g_Device.Attach(device);
+
+    // Create allocator
+
+    {
+        D3D12MA::ALLOCATOR_DESC desc = {};
+        desc.Flags = 0;
+        desc.pDevice = device;
+
+        D3D12MA::ALLOCATION_CALLBACKS allocationCallbacks = {};
+        if(ENABLE_CPU_ALLOCATION_CALLBACKS)
+        {
+            allocationCallbacks.pAllocate = &CustomAllocate;
+            allocationCallbacks.pFree = &CustomFree;
+            allocationCallbacks.pUserData = CUSTOM_ALLOCATION_USER_DATA;
+            desc.pAllocationCallbacks = &allocationCallbacks;
+        }
+
+        CHECK_HR( D3D12MA::CreateAllocator(&desc, &g_Allocator) );
+    }
 
     // -- Create the Command Queue -- //
 
@@ -1322,6 +1367,7 @@ void Cleanup() // release com ojects and clean up memory
         g_CommandAllocators[i].Release();
         g_Fences[i].Release();
     }
+    D3D12MA::DestroyAllocator(g_Allocator);
     g_Device.Release();
     g_SwapChain.Release();
 }
