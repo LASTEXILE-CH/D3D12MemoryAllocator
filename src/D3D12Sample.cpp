@@ -23,6 +23,15 @@
 #include "D3D12MemAlloc.h"
 #include "Common.h"
 
+namespace VS
+{
+    #include "Shaders\VS_Compiled.h"
+}
+namespace PS
+{
+    #include "Shaders\PS_Compiled.h"
+}
+
 const wchar_t * const CLASS_NAME = L"D3D12MemAllocSample";
 const wchar_t * const WINDOW_TITLE = L"Direct3D 12 Memory Allocator Sample";
 const int SIZE_X = 1024;
@@ -147,30 +156,6 @@ static void SetDefaultDepthStencilDesc(D3D12_DEPTH_STENCIL_DESC& outDesc)
         D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS };
     outDesc.FrontFace = defaultStencilOp;
     outDesc.BackFace = defaultStencilOp;
-}
-
-ID3DBlob* CompileShader(
-    const wchar_t* filePath,
-    const char* entryPoint,
-    const char* target)
-{
-    ID3DBlob* shaderPtr = nullptr;
-    ID3DBlob* errorBuffPtr = nullptr;
-    wprintf(L"Compiling shader \"%s\"\n", filePath);
-    HRESULT hr = D3DCompileFromFile(filePath,
-        nullptr,
-        nullptr,
-        entryPoint,
-        target,
-        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION,
-        0,
-        &shaderPtr,
-        &errorBuffPtr);
-    CComPtr<ID3DBlob> errorBuff{errorBuffPtr};
-    if(errorBuff && errorBuffPtr->GetBufferSize())
-        printf("%s\n", (char*)errorBuff->GetBufferPointer());
-    CHECK_HR(hr);
-    return shaderPtr;
 }
 
 void WaitForFrame(size_t frameIndex) // wait until gpu is finished with command list
@@ -625,21 +610,6 @@ void InitD3D() // initializes direct3d 12
         CHECK_HR( g_ConstantBufferUploadHeap[i]->Map(0, &readRange, &g_ConstantBufferAddress[i]) );
     }
 
-    // create vertex and pixel shaders
-
-    // when debugging, we can compile the shader files at runtime.
-    // but for release versions, we can compile the hlsl shaders
-    // with fxc.exe to create .cso files, which contain the shader
-    // bytecode. We can load the .cso files at runtime to get the
-    // shader bytecode, which of course is faster than compiling
-    // them at runtime
-
-    // compile vertex shader
-    CComPtr<ID3DBlob> vertexShader{CompileShader(L"Shaders/VS.hlsl", "main", "vs_5_0")};
-
-    // compile pixel shader
-    CComPtr<ID3DBlob> pixelShader{CompileShader(L"Shaders/PS.hlsl", "main", "ps_5_0")};
-
     // create input layout
 
     // The input layout is used by the Input Assembler so that it knows
@@ -667,10 +637,10 @@ void InitD3D() // initializes direct3d 12
     psoDesc.InputLayout.NumElements = _countof(inputLayout);
     psoDesc.InputLayout.pInputElementDescs = inputLayout;
     psoDesc.pRootSignature = g_RootSignature; // the root signature that describes the input data this pso needs
-    psoDesc.VS.BytecodeLength = vertexShader->GetBufferSize();
-    psoDesc.VS.pShaderBytecode = vertexShader->GetBufferPointer();
-    psoDesc.PS.BytecodeLength = pixelShader->GetBufferSize();
-    psoDesc.PS.pShaderBytecode = pixelShader->GetBufferPointer();
+    psoDesc.VS.BytecodeLength = sizeof(VS::g_main);
+    psoDesc.VS.pShaderBytecode = VS::g_main;
+    psoDesc.PS.BytecodeLength = sizeof(PS::g_main);
+    psoDesc.PS.pShaderBytecode = PS::g_main;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE; // type of topology we are drawing
     psoDesc.RTVFormats[0] = RENDER_TARGET_FORMAT; // format of the render target
     psoDesc.DSVFormat = DEPTH_STENCIL_FORMAT;
