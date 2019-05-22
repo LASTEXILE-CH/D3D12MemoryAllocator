@@ -5,10 +5,14 @@ struct VS_OUTPUT
 {
     float4 pos: SV_POSITION;
     float2 texCoord: TEXCOORD;
-    float4 color: COLOR;
+};
+
+cbuffer ConstantBuffer0 : register(b0)
+{
+    float4 color;
 };
 
 float4 main(VS_OUTPUT input) : SV_TARGET
 {
-    return t0.Sample(s0, input.texCoord) * input.color;
+    return t0.Sample(s0, input.texCoord) * color;
 }

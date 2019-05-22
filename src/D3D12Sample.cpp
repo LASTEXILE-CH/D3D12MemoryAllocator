@@ -69,20 +69,18 @@ CComPtr<ID3D12DescriptorHeap> g_DepthStencilDescriptorHeap;
 struct Vertex {
     vec3 pos;
     vec2 texCoord;
-    vec4 color;
 
     Vertex() { }
-    Vertex(float x, float y, float z, float tx, float ty, float r, float g, float b, float a) :
+    Vertex(float x, float y, float z, float tx, float ty) :
         pos(x, y, z),
-        texCoord(tx, ty),
-        color(r, g, b, a)
+        texCoord(tx, ty)
     {
     }
 };
 
 struct ConstantBuffer
 {
-    vec4 ColorMultiplier;
+    vec4 Color;
 };
 
 struct ConstantBufferPerObject
@@ -517,14 +515,12 @@ void InitD3D() // initializes direct3d 12
     g_FenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     assert(g_FenceEvent);
 
-    // create a descriptor range (descriptor table) and fill it out
-    // this is a range of descriptors inside a descriptor heap
-    D3D12_DESCRIPTOR_RANGE cbDescriptorRange; // only one range right now
-    cbDescriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV; // this is a range of constant buffer views (descriptors)
-    cbDescriptorRange.NumDescriptors = 1; // we only have one constant buffer, so the range is only 1
-    cbDescriptorRange.BaseShaderRegister = 0; // start index of the shader registers in the range
-    cbDescriptorRange.RegisterSpace = 0; // space 0. can usually be zero
-    cbDescriptorRange.OffsetInDescriptorsFromTableStart = 0; // this appends the range to the end of the root signature descriptor tables
+    D3D12_DESCRIPTOR_RANGE cbDescriptorRange;
+    cbDescriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+    cbDescriptorRange.NumDescriptors = 1;
+    cbDescriptorRange.BaseShaderRegister = 0;
+    cbDescriptorRange.RegisterSpace = 0;
+    cbDescriptorRange.OffsetInDescriptorsFromTableStart = 0;
 
     D3D12_DESCRIPTOR_RANGE textureDescRange;
     textureDescRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -533,12 +529,11 @@ void InitD3D() // initializes direct3d 12
     textureDescRange.RegisterSpace = 0;
     textureDescRange.OffsetInDescriptorsFromTableStart = 1;
 
-    // create a root parameter and fill it out
-    D3D12_ROOT_PARAMETER  rootParameters[3]; // only one parameter right now
+    D3D12_ROOT_PARAMETER  rootParameters[3];
 
-    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; // this is a descriptor table
+    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[0].DescriptorTable = {1, &cbDescriptorRange};
-    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX; // our pixel shader will be the only shader accessing this parameter for now
+    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[1].Descriptor = {1, 0};
@@ -654,7 +649,6 @@ void InitD3D() // initializes direct3d 12
     {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     // create a pipeline state object (PSO)
@@ -697,40 +691,40 @@ void InitD3D() // initializes direct3d 12
     // a triangle
     Vertex vList[] = {
         // front face
-        { -0.5f,  0.5f, -0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-        {  0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-        { -0.5f, -0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-        {  0.5f,  0.5f, -0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        { -0.5f,  0.5f, -0.5f, 0.f, 0.f },
+        {  0.5f, -0.5f, -0.5f, 1.f, 1.f },
+        { -0.5f, -0.5f, -0.5f, 0.f, 1.f },
+        {  0.5f,  0.5f, -0.5f, 1.f, 0.f },
 
         // right side face
-        {  0.5f, -0.5f, -0.5f, 0.f, 1.f, 1.0f, 0.0f, 0.0f, 1.0f },
-        {  0.5f,  0.5f,  0.5f, 1.f, 0.f, 1.0f, 0.0f, 1.0f, 1.0f },
-        {  0.5f, -0.5f,  0.5f, 1.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-        {  0.5f,  0.5f, -0.5f, 0.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        {  0.5f, -0.5f, -0.5f, 0.f, 1.f },
+        {  0.5f,  0.5f,  0.5f, 1.f, 0.f },
+        {  0.5f, -0.5f,  0.5f, 1.f, 1.f },
+        {  0.5f,  0.5f, -0.5f, 0.f, 0.f },
 
         // left side face
-        { -0.5f,  0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-        { -0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-        { -0.5f, -0.5f,  0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-        { -0.5f,  0.5f, -0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        { -0.5f,  0.5f,  0.5f, 0.f, 0.f },
+        { -0.5f, -0.5f, -0.5f, 1.f, 1.f },
+        { -0.5f, -0.5f,  0.5f, 0.f, 1.f },
+        { -0.5f,  0.5f, -0.5f, 1.f, 0.f },
 
         // back face
-        {  0.5f,  0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-        { -0.5f, -0.5f,  0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-        {  0.5f, -0.5f,  0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-        { -0.5f,  0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        {  0.5f,  0.5f,  0.5f, 0.f, 0.f },
+        { -0.5f, -0.5f,  0.5f, 1.f, 1.f },
+        {  0.5f, -0.5f,  0.5f, 0.f, 1.f },
+        { -0.5f,  0.5f,  0.5f, 1.f, 0.f },
 
         // top face
-        { -0.5f,  0.5f, -0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-        {  0.5f,  0.5f,  0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-        {  0.5f,  0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-        { -0.5f,  0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        { -0.5f,  0.5f, -0.5f, 0.f, 0.f },
+        {  0.5f,  0.5f,  0.5f, 1.f, 1.f },
+        {  0.5f,  0.5f, -0.5f, 0.f, 1.f },
+        { -0.5f,  0.5f,  0.5f, 1.f, 0.f },
 
         // bottom face
-        {  0.5f, -0.5f,  0.5f, 0.f, 0.f, 1.0f, 0.0f, 0.0f, 1.0f },
-        { -0.5f, -0.5f, -0.5f, 1.f, 1.f, 1.0f, 0.0f, 1.0f, 1.0f },
-        {  0.5f, -0.5f, -0.5f, 0.f, 1.f, 0.0f, 0.0f, 1.0f, 1.0f },
-        { -0.5f, -0.5f,  0.5f, 1.f, 0.f, 0.0f, 1.0f, 0.0f, 1.0f },
+        {  0.5f, -0.5f,  0.5f, 0.f, 0.f },
+        { -0.5f, -0.5f, -0.5f, 1.f, 1.f },
+        {  0.5f, -0.5f, -0.5f, 0.f, 1.f },
+        { -0.5f, -0.5f,  0.5f, 1.f, 0.f },
     };
     const uint32_t vBufferSize = sizeof(vList);
 
@@ -987,7 +981,7 @@ void InitD3D() // initializes direct3d 12
     cube1WorldMat = tmpMat;
 
                                              // second cube
-    cube2PositionOffset = vec4(1.5f, 0.0f, 0.0f, 0.0f);
+    cube2PositionOffset = vec4(1.2f, 0.0f, 0.0f, 0.0f);
     posVec = cube2PositionOffset + cube1Position; // create xmvector for cube2's position
                                                                                 // we are rotating around cube1 here, so add cube2's position to cube1
 
@@ -1131,11 +1125,9 @@ void InitD3D() // initializes direct3d 12
 void Update()
 {
     {
-        float f_Linear = sin(g_Time * (PI * 2.f)) * 0.5f + 0.5f;
-        float f_sRGB = pow(f_Linear, 1.f / 2.2f);
-
+        const float f = sin(g_Time * (PI * 2.f)) * 0.5f + 0.5f;
         ConstantBuffer cb;
-        cb.ColorMultiplier = vec4(f_sRGB, f_sRGB, f_sRGB, 1.f);
+        cb.Color = vec4(f, f, f, 1.f);
         memcpy(g_ConstantBufferAddress[g_FrameIndex], &cb, sizeof(cb));
     }
 
