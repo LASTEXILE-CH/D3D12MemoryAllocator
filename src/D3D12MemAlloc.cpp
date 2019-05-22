@@ -25,6 +25,7 @@
 #include <mutex>
 #include <atomic>
 #include <algorithm>
+#include <cstdlib>
 #include <malloc.h> // for _aligned_malloc, _aligned_free
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -413,7 +414,7 @@ Returned value is the found element, if present in the collection or place where
 new element with value (key) should be inserted.
 */
 template <typename CmpLess, typename IterT, typename KeyT>
-static IterT BinaryFindFirstNotLess(IterT beg, IterT end, const KeyT &key, CmpLess cmp)
+static IterT BinaryFindFirstNotLess(IterT beg, IterT end, const KeyT &key, const CmpLess& cmp)
 {
     size_t down = 0, up = (end - beg);
     while(down < up)
@@ -431,8 +432,258 @@ static IterT BinaryFindFirstNotLess(IterT beg, IterT end, const KeyT &key, CmpLe
     return beg + down;
 }
 
+template<typename CmpLess, typename IterT, typename KeyT>
+IterT BinaryFindSorted(const IterT& beg, const IterT& end, const KeyT& value, const CmpLess& cmp)
+{
+    IterT it = BinaryFindFirstNotLess<CmpLess, IterT, KeyT>(beg, end, value, cmp);
+    if(it == end ||
+        (!cmp(*it, value) && !cmp(value, *it)))
+    {
+        return it;
+    }
+    return end;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Private class Vector
+
+/*
+Class with interface similar to std::vector.
+T must be POD because constructors and destructors are not called and memcpy is
+used for these objects.
+*/
+template<typename T>
+class Vector
+{
+public:
+    typedef T value_type;
+
+    // allocationCallbacks externally owned, must outlive this object.
+    Vector(const ALLOCATION_CALLBACKS& allocationCallbacks) :
+        m_AllocationCallbacks(allocationCallbacks),
+        m_pArray(NULL),
+        m_Count(0),
+        m_Capacity(0)
+    {
+    }
+
+    Vector(size_t count, const ALLOCATION_CALLBACKS& allocationCallbacks) :
+        m_AllocationCallbacks(allocationCallbacks),
+        m_pArray(count ? AllocateArray<T>(allocationCallbacks, count) : NULL),
+        m_Count(count),
+        m_Capacity(count)
+    {
+    }
+
+    Vector(const Vector<T>& src) :
+        m_AllocationCallbacks(src.m_AllocationCallbacks),
+        m_pArray(src.m_Count ? AllocateArray<T>(src.m_AllocationCallbacks, src.m_Count) : NULL),
+        m_Count(src.m_Count),
+        m_Capacity(src.m_Count)
+    {
+        if(m_Count > 0)
+        {
+            memcpy(m_pArray, src.m_pArray, m_Count * sizeof(T));
+        }
+    }
+
+    ~Vector()
+    {
+        Free(m_AllocationCallbacks, m_pArray);
+    }
+
+    Vector& operator=(const Vector<T>& rhs)
+    {
+        if(&rhs != this)
+        {
+            resize(rhs.m_Count);
+            if(m_Count != 0)
+            {
+                memcpy(m_pArray, rhs.m_pArray, m_Count * sizeof(T));
+            }
+        }
+        return *this;
+    }
+
+    bool empty() const { return m_Count == 0; }
+    size_t size() const { return m_Count; }
+    T* data() { return m_pArray; }
+    const T* data() const { return m_pArray; }
+
+    T& operator[](size_t index)
+    {
+        D3D12MA_HEAVY_ASSERT(index < m_Count);
+        return m_pArray[index];
+    }
+    const T& operator[](size_t index) const
+    {
+        D3D12MA_HEAVY_ASSERT(index < m_Count);
+        return m_pArray[index];
+    }
+
+    T& front()
+    {
+        D3D12MA_HEAVY_ASSERT(m_Count > 0);
+        return m_pArray[0];
+    }
+    const T& front() const
+    {
+        D3D12MA_HEAVY_ASSERT(m_Count > 0);
+        return m_pArray[0];
+    }
+    T& back()
+    {
+        D3D12MA_HEAVY_ASSERT(m_Count > 0);
+        return m_pArray[m_Count - 1];
+    }
+    const T& back() const
+    {
+        D3D12MA_HEAVY_ASSERT(m_Count > 0);
+        return m_pArray[m_Count - 1];
+    }
+
+    void reserve(size_t newCapacity, bool freeMemory = false)
+    {
+        newCapacity = D3D12MA_MAX(newCapacity, m_Count);
+
+        if((newCapacity < m_Capacity) && !freeMemory)
+        {
+            newCapacity = m_Capacity;
+        }
+
+        if(newCapacity != m_Capacity)
+        {
+            T* const newArray = newCapacity ? AllocateArray<T>(m_AllocationCallbacks, newCapacity) : NULL;
+            if(m_Count != 0)
+            {
+                memcpy(newArray, m_pArray, m_Count * sizeof(T));
+            }
+            Free(m_Allocator.m_pCallbacks, m_pArray);
+            m_Capacity = newCapacity;
+            m_pArray = newArray;
+        }
+    }
+
+    void resize(size_t newCount, bool freeMemory = false)
+    {
+        size_t newCapacity = m_Capacity;
+        if(newCount > m_Capacity)
+        {
+            newCapacity = D3D12MA_MAX(newCount, D3D12MA_MAX(m_Capacity * 3 / 2, (size_t)8));
+        }
+        else if(freeMemory)
+        {
+            newCapacity = newCount;
+        }
+
+        if(newCapacity != m_Capacity)
+        {
+            T* const newArray = newCapacity ? AllocateArray<T>(m_AllocationCallbacks, newCapacity) : NULL;
+            const size_t elementsToCopy = D3D12MA_MIN(m_Count, newCount);
+            if(elementsToCopy != 0)
+            {
+                memcpy(newArray, m_pArray, elementsToCopy * sizeof(T));
+            }
+            Free(m_AllocationCallbacks, m_pArray);
+            m_Capacity = newCapacity;
+            m_pArray = newArray;
+        }
+
+        m_Count = newCount;
+    }
+
+    void clear(bool freeMemory = false)
+    {
+        resize(0, freeMemory);
+    }
+
+    void insert(size_t index, const T& src)
+    {
+        D3D12MA_HEAVY_ASSERT(index <= m_Count);
+        const size_t oldCount = size();
+        resize(oldCount + 1);
+        if(index < oldCount)
+        {
+            memmove(m_pArray + (index + 1), m_pArray + index, (oldCount - index) * sizeof(T));
+        }
+        m_pArray[index] = src;
+    }
+
+    void remove(size_t index)
+    {
+        D3D12MA_HEAVY_ASSERT(index < m_Count);
+        const size_t oldCount = size();
+        if(index < oldCount - 1)
+        {
+            memmove(m_pArray + index, m_pArray + (index + 1), (oldCount - index - 1) * sizeof(T));
+        }
+        resize(oldCount - 1);
+    }
+
+    void push_back(const T& src)
+    {
+        const size_t newIndex = size();
+        resize(newIndex + 1);
+        m_pArray[newIndex] = src;
+    }
+
+    void pop_back()
+    {
+        D3D12MA_HEAVY_ASSERT(m_Count > 0);
+        resize(size() - 1);
+    }
+
+    void push_front(const T& src)
+    {
+        insert(0, src);
+    }
+
+    void pop_front()
+    {
+        D3D12MA_HEAVY_ASSERT(m_Count > 0);
+        remove(0);
+    }
+
+    typedef T* iterator;
+
+    iterator begin() { return m_pArray; }
+    iterator end() { return m_pArray + m_Count; }
+
+    template<typename CmpLess>
+    size_t InsertSorted(const T& value, const CmpLess& cmp)
+    {
+        const size_t indexToInsert = BinaryFindFirstNotLess<CmpLess, iterator, T>(
+            m_pArray,
+            m_pArray + m_Count,
+            value,
+            cmp) - vector.data();
+        insert(indexToInsert, value);
+        return indexToInsert;
+    }
+
+    template<typename CmpLess>
+    bool RemoveSorted(const T& value, const CmpLess& cmp)
+    {
+        const iterator it = BinaryFindFirstNotLess(
+            m_pArray,
+            m_pArray + m_Count,
+            value,
+            cmp);
+        if((it != end()) && !cmp(*it, value) && !cmp(value, *it))
+        {
+            size_t indexToRemove = it - vector.begin();
+            remove(indexToRemove);
+            return true;
+        }
+        return false;
+    }
+
+private:
+    const ALLOCATION_CALLBACKS& m_AllocationCallbacks;
+    T* m_pArray;
+    size_t m_Count;
+    size_t m_Capacity;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private class AllocatorPimpl definition and implementation
@@ -447,6 +698,8 @@ public:
     const ALLOCATION_CALLBACKS& GetAllocationCallbacks() const { return m_AllocationCallbacks; }
 
 private:
+    friend class Allocator;
+
     UINT m_Flags; // ALLOCATOR_FLAGS
     ID3D12Device* m_Device;
     UINT64 m_PreferredLargeHeapBlockSize;
@@ -482,6 +735,13 @@ Allocator::Allocator(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLO
 Allocator::~Allocator()
 {
     D3D12MA_DELETE(m_Pimpl->GetAllocationCallbacks(), m_Pimpl);
+}
+
+void Allocator::Test()
+{
+    Vector<size_t> v(m_Pimpl->GetAllocationCallbacks());
+    for(size_t i = 0; i < 1000; ++i)
+        v.push_back(i);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -97,6 +97,8 @@ public:
         REFIID riidResource,
         void** ppvResource);
 
+    void Test();
+
 private:
     friend HRESULT CreateAllocator(const ALLOCATOR_DESC*, Allocator**);
     friend void DestroyAllocator(Allocator*);

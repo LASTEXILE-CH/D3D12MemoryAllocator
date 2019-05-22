@@ -391,6 +391,7 @@ void InitD3D() // initializes direct3d 12
         }
 
         CHECK_HR( D3D12MA::CreateAllocator(&desc, &g_Allocator) );
+        g_Allocator->Test();
     }
 
     // -- Create the Command Queue -- //
