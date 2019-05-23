@@ -1323,6 +1323,13 @@ Allocator::~Allocator()
     D3D12MA_DELETE(m_Pimpl->GetAllocationCallbacks(), m_Pimpl);
 }
 
+void Allocator::Release()
+{
+    // Copy is needed because otherwise we would call destructor and invalidate the structure with callbacks before using it to free memory.
+    const ALLOCATION_CALLBACKS allocationCallbacksCopy = m_Pimpl->GetAllocationCallbacks();
+    D3D12MA_DELETE(allocationCallbacksCopy, this);
+}
+
 void Allocator::Test()
 {
 #if 0
@@ -1371,7 +1378,7 @@ void Allocator::Test()
 
 HRESULT CreateAllocator(const ALLOCATOR_DESC* pDesc, Allocator** ppAllocator)
 {
-    D3D12MA_ASSERT(pDesc);
+    D3D12MA_ASSERT(pDesc && ppAllocator);
     D3D12MA_ASSERT(pDesc->pDevice);
     D3D12MA_ASSERT(pDesc->PreferredLargeHeapBlockSize == 0 || (pDesc->PreferredLargeHeapBlockSize >= 16 && pDesc->PreferredLargeHeapBlockSize < 0x10000000000ull));
 
@@ -1386,13 +1393,6 @@ HRESULT CreateAllocator(const ALLOCATOR_DESC* pDesc, Allocator** ppAllocator)
         *ppAllocator = NULL;
     }
     return hr;
-}
-
-void DestroyAllocator(Allocator* pAllocator)
-{
-    // Copy is needed because otherwise we would call destructor and invalidate the structure with callbacks ub before using it to free memory.
-    const ALLOCATION_CALLBACKS allocationCallbacksCopy = pAllocator->m_Pimpl->GetAllocationCallbacks();
-    D3D12MA_DELETE(allocationCallbacksCopy, pAllocator);
 }
 
 } // namespace D3D12MA

@@ -1377,7 +1377,7 @@ void Cleanup() // release com ojects and clean up memory
         g_Fences[i].Release();
     }
     
-    D3D12MA::DestroyAllocator(g_Allocator);
+    g_Allocator->Release(); g_Allocator = nullptr;
     if(ENABLE_CPU_ALLOCATION_CALLBACKS)
     {
         assert(g_CpuAllocationCount.load() == 0);
