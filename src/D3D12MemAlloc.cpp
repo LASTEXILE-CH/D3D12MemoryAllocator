@@ -1349,6 +1349,7 @@ void Allocator::Test()
     }
 #endif
 
+#if 0
     struct FooStruct { int foo[10]; };
     List<FooStruct> list(m_Pimpl->GetAllocationCallbacks());
     for(size_t i = 0; i < 1000; ++i)
@@ -1362,6 +1363,7 @@ void Allocator::Test()
         else
             list.PopFront();
     }
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
