@@ -1282,6 +1282,8 @@ public:
     ~AllocatorPimpl();
 
     const ALLOCATION_CALLBACKS& GetAllocationCallbacks() const { return m_AllocationCallbacks; }
+    const D3D12_FEATURE_DATA_D3D12_OPTIONS& GetD3D12Options() const { return m_D3D12Options; }
+    bool SupportsResourceHeapTier2() const { return m_D3D12Options.ResourceHeapTier >= D3D12_RESOURCE_HEAP_TIER_2; }
 
 private:
     friend class Allocator;
@@ -1290,6 +1292,8 @@ private:
     ID3D12Device* m_Device;
     UINT64 m_PreferredLargeHeapBlockSize;
     ALLOCATION_CALLBACKS m_AllocationCallbacks;
+
+    D3D12_FEATURE_DATA_D3D12_OPTIONS m_D3D12Options;
 };
 
 AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLOCATOR_DESC& desc) :
@@ -1299,10 +1303,17 @@ AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, 
     m_AllocationCallbacks(allocationCallbacks)
 {
     // desc.pAllocationCallbacks intentionally ignored here, preprocessed by CreateAllocator.
+    ZeroMemory(&m_D3D12Options, sizeof(m_D3D12Options));
 }
 
 HRESULT AllocatorPimpl::Init()
 {
+    HRESULT hr = m_Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &m_D3D12Options, sizeof(m_D3D12Options));
+    if(FAILED(hr))
+    {
+        return hr;
+    }
+
     return S_OK;
 }
 
@@ -1328,6 +1339,11 @@ void Allocator::Release()
     // Copy is needed because otherwise we would call destructor and invalidate the structure with callbacks before using it to free memory.
     const ALLOCATION_CALLBACKS allocationCallbacksCopy = m_Pimpl->GetAllocationCallbacks();
     D3D12MA_DELETE(allocationCallbacksCopy, this);
+}
+
+const D3D12_FEATURE_DATA_D3D12_OPTIONS& Allocator::GetD3D12Options() const
+{
+    return m_Pimpl->GetD3D12Options();
 }
 
 void Allocator::Test()

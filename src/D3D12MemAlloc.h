@@ -59,7 +59,11 @@ Project setup goes here TODO...
         className(className&&) = delete; \
         className& operator=(const className&) = delete; \
         className& operator=(className&&) = delete;
+#define FACILITY_D3D12MA 3542
 /// \endcond
+
+/// Test error code TODO remove
+#define D3D12MA_E_TEST_ERROR   MAKE_HRESULT(SEVERITY_ERROR, FACILITY_D3D12MA, 1)
 
 namespace D3D12MA
 {
@@ -212,6 +216,9 @@ public:
         Allocation** ppAllocation,
         REFIID riidResource,
         void** ppvResource);
+
+    /// Returns cached options retrieved from D3D12 device.
+    const D3D12_FEATURE_DATA_D3D12_OPTIONS& GetD3D12Options() const;
 
     /// \cond INTERNAL
     void Test();
