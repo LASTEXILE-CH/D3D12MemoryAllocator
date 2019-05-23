@@ -22,6 +22,7 @@
 
 #include "D3D12MemAlloc.h"
 #include "Common.h"
+#include <atomic>
 
 namespace VS
 {
@@ -120,6 +121,8 @@ CComPtr<ID3D12Resource> g_Texture;
 
 static void* const CUSTOM_ALLOCATION_USER_DATA = (void*)(uintptr_t)0xDEADC0DE;
 
+static std::atomic<size_t> g_CpuAllocationCount{0};
+
 static void* CustomAllocate(size_t Size, size_t Alignment, void* pUserData)
 {
     assert(pUserData == CUSTOM_ALLOCATION_USER_DATA);
@@ -128,17 +131,22 @@ static void* CustomAllocate(size_t Size, size_t Alignment, void* pUserData)
     {
         wprintf(L"Allocate Size=%llu Alignment=%llu -> %p\n", Size, Alignment, memory);
     }
+    ++g_CpuAllocationCount;
     return memory;
 }
 
 static void CustomFree(void* pMemory, void* pUserData)
 {
     assert(pUserData == CUSTOM_ALLOCATION_USER_DATA);
-    if(ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT && pMemory)
+    if(pMemory)
     {
-        wprintf(L"Free %p\n", pMemory);
+        --g_CpuAllocationCount;
+        if(ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT)
+        {
+            wprintf(L"Free %p\n", pMemory);
+        }
+        _aligned_free(pMemory);
     }
-    _aligned_free(pMemory);
 }
 
 static void SetDefaultRasterizerDesc(D3D12_RASTERIZER_DESC& outDesc)
@@ -1368,7 +1376,13 @@ void Cleanup() // release com ojects and clean up memory
         g_CommandAllocators[i].Release();
         g_Fences[i].Release();
     }
+    
     D3D12MA::DestroyAllocator(g_Allocator);
+    if(ENABLE_CPU_ALLOCATION_CALLBACKS)
+    {
+        assert(g_CpuAllocationCount.load() == 0);
+    }
+    
     g_Device.Release();
     g_SwapChain.Release();
 }

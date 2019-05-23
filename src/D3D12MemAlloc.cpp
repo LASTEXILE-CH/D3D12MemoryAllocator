@@ -109,7 +109,7 @@ static void D3D12MA_DELETE_ARRAY(const ALLOCATION_CALLBACKS& Callbacks, T* pMemo
 {
     if(pMemory)
     {
-        for(size_t i = count; i--; )
+        for(size_t i = Count; i--; )
         {
             pMemory[i].~T();
         }
@@ -788,7 +788,7 @@ void PoolAllocator<T>::Free(T* ptr)
             return;
         }
     }
-    VMA_ASSERT(0 && "Pointer doesn't belong to this memory pool.");
+    D3D12MA_ASSERT(0 && "Pointer doesn't belong to this memory pool.");
 }
 
 template<typename T>
@@ -867,9 +867,27 @@ Allocator::~Allocator()
 
 void Allocator::Test()
 {
+    /*
     Vector<size_t> v(m_Pimpl->GetAllocationCallbacks());
     for(size_t i = 0; i < 1000; ++i)
         v.push_back(i);
+    */
+
+    PoolAllocator<size_t> poolAlloc{m_Pimpl->GetAllocationCallbacks(), 8};
+    Vector<size_t*> allocatedItems{m_Pimpl->GetAllocationCallbacks()};
+    for(size_t i = 0; i < 1000; ++i)
+    {
+        size_t* const allocatedItem = poolAlloc.Alloc();
+        allocatedItems.push_back(allocatedItem);
+        *allocatedItem = i * 2;
+    }
+
+    while(!allocatedItems.empty())
+    {
+        const size_t index = (size_t)rand() % allocatedItems.size();
+        poolAlloc.Free(allocatedItems[index]);
+        allocatedItems.remove(index);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
