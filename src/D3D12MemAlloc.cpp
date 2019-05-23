@@ -448,7 +448,7 @@ IterT BinaryFindSorted(const IterT& beg, const IterT& end, const KeyT& value, co
 // Private class Vector
 
 /*
-Class with interface similar to std::vector.
+Dynamically resizing continuous array. Class with interface similar to std::vector.
 T must be POD because constructors and destructors are not called and memcpy is
 used for these objects.
 */
@@ -684,6 +684,134 @@ private:
     size_t m_Count;
     size_t m_Capacity;
 };
+
+////////////////////////////////////////////////////////////////////////////////
+// private class PoolAllocator
+
+/*
+Allocator for objects of type T using a list of arrays (pools) to speed up
+allocation. Number of elements that can be allocated is not bounded because
+allocator can create multiple blocks.
+T should be POD because constructor and destructor is not called in Alloc or
+Free.
+*/
+template<typename T>
+class PoolAllocator
+{
+    D3D12MA_CLASS_NO_COPY(PoolAllocator)
+public:
+    PoolAllocator(const ALLOCATION_CALLBACKS& allocationCallbacks, uint32_t firstBlockCapacity);
+    ~PoolAllocator() { Clear(); }
+    void Clear();
+    T* Alloc();
+    void Free(T* ptr);
+
+private:
+    union Item
+    {
+        uint32_t NextFreeIndex; // UINT32_MAX means end of list.
+        T Value;
+    };
+
+    struct ItemBlock
+    {
+        Item* pItems;
+        uint32_t Capacity;
+        uint32_t FirstFreeIndex;
+    };
+
+    const ALLOCATION_CALLBACKS& m_AllocationCallbacks;
+    const uint32_t m_FirstBlockCapacity;
+    Vector<ItemBlock> m_ItemBlocks;
+
+    ItemBlock& CreateNewBlock();
+};
+
+template<typename T>
+PoolAllocator<T>::PoolAllocator(const ALLOCATION_CALLBACKS& allocationCallbacks, uint32_t firstBlockCapacity) :
+    m_AllocationCallbacks(allocationCallbacks),
+    m_FirstBlockCapacity(firstBlockCapacity),
+    m_ItemBlocks(allocationCallbacks)
+{
+    D3D12MA_ASSERT(m_FirstBlockCapacity > 1);
+}
+
+template<typename T>
+void PoolAllocator<T>::Clear()
+{
+    for(size_t i = m_ItemBlocks.size(); i--; )
+    {
+        D3D12MA_DELETE_ARRAY(m_AllocationCallbacks, m_ItemBlocks[i].pItems, m_ItemBlocks[i].Capacity);
+    }
+    m_ItemBlocks.clear(true);
+}
+
+template<typename T>
+T* PoolAllocator<T>::Alloc()
+{
+    for(size_t i = m_ItemBlocks.size(); i--; )
+    {
+        ItemBlock& block = m_ItemBlocks[i];
+        // This block has some free items: Use first one.
+        if(block.FirstFreeIndex != UINT32_MAX)
+        {
+            Item* const pItem = &block.pItems[block.FirstFreeIndex];
+            block.FirstFreeIndex = pItem->NextFreeIndex;
+            return &pItem->Value;
+        }
+    }
+
+    // No block has free item: Create new one and use it.
+    ItemBlock& newBlock = CreateNewBlock();
+    Item* const pItem = &newBlock.pItems[0];
+    newBlock.FirstFreeIndex = pItem->NextFreeIndex;
+    return &pItem->Value;
+}
+
+template<typename T>
+void PoolAllocator<T>::Free(T* ptr)
+{
+    // Search all memory blocks to find ptr.
+    for(size_t i = m_ItemBlocks.size(); i--; )
+    {
+        ItemBlock& block = m_ItemBlocks[i];
+
+        Item* pItemPtr;
+        memcpy(&pItemPtr, &ptr, sizeof(pItemPtr));
+
+        // Check if pItemPtr is in address range of this block.
+        if((pItemPtr >= block.pItems) && (pItemPtr < block.pItems + block.Capacity))
+        {
+            const uint32_t index = static_cast<uint32_t>(pItemPtr - block.pItems);
+            pItemPtr->NextFreeIndex = block.FirstFreeIndex;
+            block.FirstFreeIndex = index;
+            return;
+        }
+    }
+    VMA_ASSERT(0 && "Pointer doesn't belong to this memory pool.");
+}
+
+template<typename T>
+typename PoolAllocator<T>::ItemBlock& PoolAllocator<T>::CreateNewBlock()
+{
+    const uint32_t newBlockCapacity = m_ItemBlocks.empty() ?
+        m_FirstBlockCapacity : m_ItemBlocks.back().Capacity * 3 / 2;
+
+    const ItemBlock newBlock = {
+        D3D12MA_NEW_ARRAY(m_AllocationCallbacks, Item, newBlockCapacity),
+        newBlockCapacity,
+        0 };
+
+    m_ItemBlocks.push_back(newBlock);
+
+    // Setup singly-linked list of all free items in this block.
+    for(uint32_t i = 0; i < newBlockCapacity - 1; ++i)
+    {
+        newBlock.pItems[i].NextFreeIndex = i + 1;
+    }
+    newBlock.pItems[newBlockCapacity - 1].NextFreeIndex = UINT32_MAX;
+    return m_ItemBlocks.back();
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private class AllocatorPimpl definition and implementation

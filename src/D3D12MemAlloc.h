@@ -72,7 +72,7 @@ struct ALLOCATION_CALLBACKS
 
 struct ALLOCATOR_DESC
 {
-    // Use @ALLOCATOR_FLAGS
+    /// Use @ALLOCATOR_FLAGS
     UINT Flags;
     ID3D12Device* pDevice;
     /// Preferred size of a single `ID3D12Heap` block to be allocated from large heaps > 1 GiB. Optional.
