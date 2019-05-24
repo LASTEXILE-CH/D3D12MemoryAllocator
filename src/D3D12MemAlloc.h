@@ -63,7 +63,7 @@ Project setup goes here TODO...
 /// \endcond
 
 /// Test error code TODO remove
-#define D3D12MA_E_TEST_ERROR   MAKE_HRESULT(SEVERITY_ERROR, FACILITY_D3D12MA, 1)
+#define D3D12MA_E_VALIDATION_FAILED   MAKE_HRESULT(SEVERITY_ERROR, FACILITY_D3D12MA, 1)
 
 namespace D3D12MA
 {
@@ -148,15 +148,48 @@ public:
     */
     void Release();
 
+    /** \brief Returns offset in bytes from the start of memory heap.
+
+    If the Allocation represents committed resource with implicit heap, returns 0.
+    */
+    UINT64 GetOffset();
+
+    /** \brief Returns size in bytes of the resource.
+
+    Works also with committed resources.
+    */
+    UINT64 GetSize();
+
+    /** \brief Returns memory heap that the resource is created in.
+
+    If the Allocation represents committed resource with implicit heap, returns NULL.
+    */
+    ID3D12Heap* GetHeap();
+
 private:
     friend class AllocatorPimpl;
     template<typename T> friend void D3D12MA_DELETE(const ALLOCATION_CALLBACKS&, T*);
 
     const ALLOCATION_CALLBACKS* m_AllocationCallbacks;
+    
+    enum Type
+    {
+        TYPE_COMMITTED,
+        TYPE_RESERVED,
+        TYPE_COUNT
+    } m_Type;
+
+    union
+    {
+        struct
+        {
+            UINT64 size;
+        } m_Committed;
+    };
 
     Allocation();
     ~Allocation();
-    void Init(const ALLOCATION_CALLBACKS* allocationCallbacks);
+    void InitCommitted(const ALLOCATION_CALLBACKS* allocationCallbacks, UINT64 size);
 
     D3D12MA_CLASS_NO_COPY(Allocation)
 };

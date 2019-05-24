@@ -36,6 +36,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifndef D3D12MA_DEBUG_MARGIN
+    // Minimum margin before and after every allocation, in bytes.
+    // Set nonzero for debugging purposes only.
+    #define D3D12MA_DEBUG_MARGIN (0)
+#endif
+
 #ifndef D3D12MA_ASSERT
     #include <cassert>
     #define D3D12MA_ASSERT(cond) assert(cond)
@@ -134,6 +140,11 @@ static void SetupAllocationCallbacks(ALLOCATION_CALLBACKS& outCallbacks, const A
 ////////////////////////////////////////////////////////////////////////////////
 // Private globals - basic facilities
 
+#define D3D12MA_VALIDATE(cond) do { if(!(cond)) { \
+        D3D12MA_ASSERT(0 && "Validation failed: " #cond); \
+        return false; \
+    } } while(false)
+
 template<typename T>
 static inline T D3D12MA_MIN(const T& a, const T& b)
 {
@@ -179,13 +190,13 @@ static inline T D3D12MA_MAX(const T& a, const T& b)
 /*
 If providing your own implementation, you need to implement a subset of std::atomic:
 
-- Constructor(uint32_t desired)
-- uint32_t load() const
-- void store(uint32_t desired)
-- bool compare_exchange_weak(uint32_t& expected, uint32_t desired)
+- Constructor(UINT desired)
+- UINT load() const
+- void store(UINT desired)
+- bool compare_exchange_weak(UINT& expected, UINT desired)
 */
 #ifndef D3D12MA_ATOMIC_UINT32
-    #define D3D12MA_ATOMIC_UINT32 std::atomic<uint32_t>
+    #define D3D12MA_ATOMIC_UINT32 std::atomic<UINT>
 #endif
 
 #ifndef D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY
@@ -223,9 +234,9 @@ If providing your own implementation, you need to implement a subset of std::ato
 #endif
 
 // Returns number of bits set to 1 in (v).
-static inline uint32_t BitsSet(uint32_t v)
+static inline UINT BitsSet(UINT v)
 {
-	uint32_t c = v - ((v >> 1) & 0x55555555);
+	UINT c = v - ((v >> 1) & 0x55555555);
 	c = ((c >>  2) & 0x33333333) + (c & 0x33333333);
 	c = ((c >>  4) + c) & 0x0F0F0F0F;
 	c = ((c >>  8) + c) & 0x00FF00FF;
@@ -233,15 +244,15 @@ static inline uint32_t BitsSet(uint32_t v)
 	return c;
 }
 
-// Aligns given value up to nearest multiply of align value. For example: VmaAlignUp(11, 8) = 16.
-// Use types like uint32_t, uint64_t as T.
+// Aligns given value up to nearest multiply of align value. For example: AlignUp(11, 8) = 16.
+// Use types like UINT, uint64_t as T.
 template <typename T>
 static inline T AlignUp(T val, T align)
 {
 	return (val + align - 1) / align * align;
 }
-// Aligns given value down to nearest multiply of align value. For example: VmaAlignUp(11, 8) = 8.
-// Use types like uint32_t, uint64_t as T.
+// Aligns given value down to nearest multiply of align value. For example: AlignUp(11, 8) = 8.
+// Use types like UINT, uint64_t as T.
 template <typename T>
 static inline T AlignDown(T val, T align)
 {
@@ -267,7 +278,7 @@ inline bool IsPow2(T x)
 }
 
 // Returns smallest power of 2 greater or equal to v.
-static inline uint32_t NextPow2(uint32_t v)
+static inline UINT NextPow2(UINT v)
 {
 	v--;
     v |= v >> 1;
@@ -292,7 +303,7 @@ static inline uint64_t NextPow2(uint64_t v)
 }
 
 // Returns largest power of 2 less or equal to v.
-static inline uint32_t PrevPow2(uint32_t v)
+static inline UINT PrevPow2(UINT v)
 {
     v |= v >> 1;
     v |= v >> 2;
@@ -656,7 +667,7 @@ public:
             m_pArray,
             m_pArray + m_Count,
             value,
-            cmp) - vector.data();
+            cmp) - m_pArray;
         insert(indexToInsert, value);
         return indexToInsert;
     }
@@ -701,7 +712,7 @@ class PoolAllocator
     D3D12MA_CLASS_NO_COPY(PoolAllocator)
 public:
     // allocationCallbacks externally owned, must outlive this object.
-    PoolAllocator(const ALLOCATION_CALLBACKS& allocationCallbacks, uint32_t firstBlockCapacity);
+    PoolAllocator(const ALLOCATION_CALLBACKS& allocationCallbacks, UINT firstBlockCapacity);
     ~PoolAllocator() { Clear(); }
     void Clear();
     T* Alloc();
@@ -710,26 +721,26 @@ public:
 private:
     union Item
     {
-        uint32_t NextFreeIndex; // UINT32_MAX means end of list.
+        UINT NextFreeIndex; // UINT32_MAX means end of list.
         T Value;
     };
 
     struct ItemBlock
     {
         Item* pItems;
-        uint32_t Capacity;
-        uint32_t FirstFreeIndex;
+        UINT Capacity;
+        UINT FirstFreeIndex;
     };
 
     const ALLOCATION_CALLBACKS& m_AllocationCallbacks;
-    const uint32_t m_FirstBlockCapacity;
+    const UINT m_FirstBlockCapacity;
     Vector<ItemBlock> m_ItemBlocks;
 
     ItemBlock& CreateNewBlock();
 };
 
 template<typename T>
-PoolAllocator<T>::PoolAllocator(const ALLOCATION_CALLBACKS& allocationCallbacks, uint32_t firstBlockCapacity) :
+PoolAllocator<T>::PoolAllocator(const ALLOCATION_CALLBACKS& allocationCallbacks, UINT firstBlockCapacity) :
     m_AllocationCallbacks(allocationCallbacks),
     m_FirstBlockCapacity(firstBlockCapacity),
     m_ItemBlocks(allocationCallbacks)
@@ -783,7 +794,7 @@ void PoolAllocator<T>::Free(T* ptr)
         // Check if pItemPtr is in address range of this block.
         if((pItemPtr >= block.pItems) && (pItemPtr < block.pItems + block.Capacity))
         {
-            const uint32_t index = static_cast<uint32_t>(pItemPtr - block.pItems);
+            const UINT index = static_cast<UINT>(pItemPtr - block.pItems);
             pItemPtr->NextFreeIndex = block.FirstFreeIndex;
             block.FirstFreeIndex = index;
             return;
@@ -795,7 +806,7 @@ void PoolAllocator<T>::Free(T* ptr)
 template<typename T>
 typename PoolAllocator<T>::ItemBlock& PoolAllocator<T>::CreateNewBlock()
 {
-    const uint32_t newBlockCapacity = m_ItemBlocks.empty() ?
+    const UINT newBlockCapacity = m_ItemBlocks.empty() ?
         m_FirstBlockCapacity : m_ItemBlocks.back().Capacity * 3 / 2;
 
     const ItemBlock newBlock = {
@@ -806,7 +817,7 @@ typename PoolAllocator<T>::ItemBlock& PoolAllocator<T>::CreateNewBlock()
     m_ItemBlocks.push_back(newBlock);
 
     // Setup singly-linked list of all free items in this block.
-    for(uint32_t i = 0; i < newBlockCapacity - 1; ++i)
+    for(UINT i = 0; i < newBlockCapacity - 1; ++i)
     {
         newBlock.pItems[i].NextFreeIndex = i + 1;
     }
@@ -1272,6 +1283,1001 @@ typename List<T>::Item* List<T>::InsertAfter(List<T>::Item* pItem, const T& valu
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Private class BlockMetadata and derived classes - declarations
+
+enum SuballocationType
+{
+    SUBALLOCATION_TYPE_FREE = 0,
+    SUBALLOCATION_TYPE_ALLOCATION = 1,
+};
+
+/*
+Represents a region of DeviceMemoryBlock that is either assigned and returned as
+allocated memory block or free.
+*/
+struct Suballocation
+{
+    UINT64 offset;
+    UINT64 size;
+    Allocation* allocation;
+    SuballocationType type;
+};
+
+// Comparator for offsets.
+struct VmaSuballocationOffsetLess
+{
+    bool operator()(const Suballocation& lhs, const Suballocation& rhs) const
+    {
+        return lhs.offset < rhs.offset;
+    }
+};
+struct VmaSuballocationOffsetGreater
+{
+    bool operator()(const Suballocation& lhs, const Suballocation& rhs) const
+    {
+        return lhs.offset > rhs.offset;
+    }
+};
+
+typedef List<Suballocation> SuballocationList;
+
+struct SuballocationItemSizeLess
+{
+    bool operator()(const SuballocationList::iterator lhs, const SuballocationList::iterator rhs) const
+    {
+        return lhs->size < rhs->size;
+    }
+    bool operator()(const SuballocationList::iterator lhs, UINT64 rhsSize) const
+    {
+        return lhs->size < rhsSize;
+    }
+};
+
+enum class AllocationRequestType
+{
+    Normal,
+    // Used by "Linear" algorithm.
+    UpperAddress,
+    EndOf1st,
+    EndOf2nd,
+};
+
+// Cost of one additional allocation lost, as equivalent in bytes.
+static const UINT64 VMA_LOST_ALLOCATION_COST = 1048576;
+
+/*
+Parameters of planned allocation inside a DeviceMemoryBlock.
+
+If canMakeOtherLost was false:
+- item points to a FREE suballocation.
+- itemsToMakeLostCount is 0.
+
+If canMakeOtherLost was true:
+- item points to first of sequence of suballocations, which are either FREE,
+or point to Allocations that can become lost.
+- itemsToMakeLostCount is the number of Allocations that need to be made lost for
+the requested allocation to succeed.
+*/
+struct VmaAllocationRequest
+{
+    UINT64 offset;
+    UINT64 sumFreeSize; // Sum size of free items that overlap with proposed allocation.
+    UINT64 sumItemSize; // Sum size of items to make lost that overlap with proposed allocation.
+    SuballocationList::iterator item;
+    size_t itemsToMakeLostCount;
+    void* customData;
+    AllocationRequestType type;
+
+    UINT64 CalcCost() const
+    {
+        return sumItemSize + itemsToMakeLostCount * VMA_LOST_ALLOCATION_COST;
+    }
+};
+
+/*
+Data structure used for bookkeeping of allocations and unused ranges of memory
+in a single ID3D12Heap memory block.
+*/
+class BlockMetadata
+{
+public:
+    BlockMetadata(const ALLOCATION_CALLBACKS* allocationCallbacks);
+    virtual ~BlockMetadata() { }
+    virtual void Init(UINT64 size) { m_Size = size; }
+
+    // Validates all data structures inside this object. If not valid, returns false.
+    virtual bool Validate() const = 0;
+    UINT64 GetSize() const { return m_Size; }
+    virtual size_t GetAllocationCount() const = 0;
+    virtual UINT64 GetSumFreeSize() const = 0;
+    virtual UINT64 GetUnusedRangeSizeMax() const = 0;
+    // Returns true if this block is empty - contains only single free suballocation.
+    virtual bool IsEmpty() const = 0;
+
+    // Tries to find a place for suballocation with given parameters inside this block.
+    // If succeeded, fills pAllocationRequest and returns true.
+    // If failed, returns false.
+    virtual bool CreateAllocationRequest(
+        UINT currentFrameIndex,
+        UINT frameInUseCount,
+        UINT64 allocSize,
+        UINT64 allocAlignment,
+        bool upperAddress,
+        bool canMakeOtherLost,
+        // Always one of VMA_ALLOCATION_CREATE_STRATEGY_* or VMA_ALLOCATION_INTERNAL_STRATEGY_* flags. TODO
+        UINT strategy,
+        VmaAllocationRequest* pAllocationRequest) = 0;
+
+    // Makes actual allocation based on request. Request must already be checked and valid.
+    virtual void Alloc(
+        const VmaAllocationRequest& request,
+        SuballocationType type,
+        UINT64 allocSize,
+        Allocation* Allocation) = 0;
+
+    // Frees suballocation assigned to given memory region.
+    virtual void Free(const Allocation* allocation) = 0;
+    virtual void FreeAtOffset(UINT64 offset) = 0;
+
+protected:
+    const ALLOCATION_CALLBACKS* GetAllocationCallbacks() const { return m_pAllocationCallbacks; }
+
+private:
+    UINT64 m_Size;
+    const ALLOCATION_CALLBACKS* m_pAllocationCallbacks;
+
+    D3D12MA_CLASS_NO_COPY(BlockMetadata);
+};
+
+class BlockMetadata_Generic : public BlockMetadata
+{
+public:
+    BlockMetadata_Generic(const ALLOCATION_CALLBACKS* allocationCallbacks);
+    virtual ~BlockMetadata_Generic();
+    virtual void Init(UINT64 size);
+
+    virtual bool Validate() const;
+    virtual size_t GetAllocationCount() const { return m_Suballocations.size() - m_FreeCount; }
+    virtual UINT64 GetSumFreeSize() const { return m_SumFreeSize; }
+    virtual UINT64 GetUnusedRangeSizeMax() const;
+    virtual bool IsEmpty() const;
+
+    virtual bool CreateAllocationRequest(
+        UINT currentFrameIndex,
+        UINT frameInUseCount,
+        UINT64 bufferImageGranularity,
+        UINT64 allocSize,
+        UINT64 allocAlignment,
+        bool upperAddress,
+        SuballocationType allocType,
+        bool canMakeOtherLost,
+        UINT strategy,
+        VmaAllocationRequest* pAllocationRequest);
+
+    virtual void Alloc(
+        const VmaAllocationRequest& request,
+        SuballocationType type,
+        UINT64 allocSize,
+        Allocation* hAllocation);
+
+    virtual void Free(const Allocation* allocation);
+    virtual void FreeAtOffset(UINT64 offset);
+
+private:
+    UINT m_FreeCount;
+    UINT64 m_SumFreeSize;
+    SuballocationList m_Suballocations;
+    // Suballocations that are free and have size greater than certain threshold.
+    // Sorted by size, ascending.
+    Vector<SuballocationList::iterator> m_FreeSuballocationsBySize;
+
+    bool ValidateFreeSuballocationList() const;
+
+    // Checks if requested suballocation with given parameters can be placed in given pFreeSuballocItem.
+    // If yes, fills pOffset and returns true. If no, returns false.
+    bool CheckAllocation(
+        UINT currentFrameIndex,
+        UINT frameInUseCount,
+        UINT64 bufferImageGranularity,
+        UINT64 allocSize,
+        UINT64 allocAlignment,
+        SuballocationType allocType,
+        SuballocationList::const_iterator suballocItem,
+        bool canMakeOtherLost,
+        UINT64* pOffset,
+        size_t* itemsToMakeLostCount,
+        UINT64* pSumFreeSize,
+        UINT64* pSumItemSize) const;
+    // Given free suballocation, it merges it with following one, which must also be free.
+    void MergeFreeWithNext(SuballocationList::iterator item);
+    // Releases given suballocation, making it free.
+    // Merges it with adjacent free suballocations if applicable.
+    // Returns iterator to new free suballocation at this place.
+    SuballocationList::iterator FreeSuballocation(SuballocationList::iterator suballocItem);
+    // Given free suballocation, it inserts it into sorted list of
+    // m_FreeSuballocationsBySize if it's suitable.
+    void RegisterFreeSuballocation(SuballocationList::iterator item);
+    // Given free suballocation, it removes it from sorted list of
+    // m_FreeSuballocationsBySize if it's suitable.
+    void UnregisterFreeSuballocation(SuballocationList::iterator item);
+
+    D3D12MA_CLASS_NO_COPY(BlockMetadata_Generic)
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class BlockMetadata implementation
+
+BlockMetadata::BlockMetadata(const ALLOCATION_CALLBACKS* allocationCallbacks) :
+    m_Size(0),
+    m_pAllocationCallbacks(allocationCallbacks)
+{
+    D3D12MA_ASSERT(allocationCallbacks);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class BlockMetadata_Generic implementation
+
+BlockMetadata_Generic::BlockMetadata_Generic(const ALLOCATION_CALLBACKS* allocationCallbacks) :
+    BlockMetadata(allocationCallbacks),
+    m_FreeCount(0),
+    m_SumFreeSize(0),
+    m_Suballocations(*allocationCallbacks),
+    m_FreeSuballocationsBySize(*allocationCallbacks)
+{
+    D3D12MA_ASSERT(allocationCallbacks);
+}
+
+BlockMetadata_Generic::~BlockMetadata_Generic()
+{
+}
+
+void BlockMetadata_Generic::Init(UINT64 size)
+{
+    BlockMetadata::Init(size);
+
+    m_FreeCount = 1;
+    m_SumFreeSize = size;
+
+    Suballocation suballoc = {};
+    suballoc.offset = 0;
+    suballoc.size = size;
+    suballoc.type = SUBALLOCATION_TYPE_FREE;
+    suballoc.allocation = NULL;
+
+    D3D12MA_ASSERT(size > MIN_FREE_SUBALLOCATION_SIZE_TO_REGISTER);
+    m_Suballocations.push_back(suballoc);
+    SuballocationList::iterator suballocItem = m_Suballocations.end();
+    --suballocItem;
+    m_FreeSuballocationsBySize.push_back(suballocItem);
+}
+
+bool BlockMetadata_Generic::Validate() const
+{
+    D3D12MA_VALIDATE(!m_Suballocations.empty());
+
+    // Expected offset of new suballocation as calculated from previous ones.
+    UINT64 calculatedOffset = 0;
+    // Expected number of free suballocations as calculated from traversing their list.
+    UINT calculatedFreeCount = 0;
+    // Expected sum size of free suballocations as calculated from traversing their list.
+    UINT64 calculatedSumFreeSize = 0;
+    // Expected number of free suballocations that should be registered in
+    // m_FreeSuballocationsBySize calculated from traversing their list.
+    size_t freeSuballocationsToRegister = 0;
+    // True if previous visited suballocation was free.
+    bool prevFree = false;
+
+    for(SuballocationList::const_iterator suballocItem = m_Suballocations.cbegin();
+        suballocItem != m_Suballocations.cend();
+        ++suballocItem)
+    {
+        const Suballocation& subAlloc = *suballocItem;
+
+        // Actual offset of this suballocation doesn't match expected one.
+        D3D12MA_VALIDATE(subAlloc.offset == calculatedOffset);
+
+        const bool currFree = (subAlloc.type == SUBALLOCATION_TYPE_FREE);
+        // Two adjacent free suballocations are invalid. They should be merged.
+        D3D12MA_VALIDATE(!prevFree || !currFree);
+
+        D3D12MA_VALIDATE(currFree == (subAlloc.allocation == NULL));
+
+        if(currFree)
+        {
+            calculatedSumFreeSize += subAlloc.size;
+            ++calculatedFreeCount;
+            if(subAlloc.size >= MIN_FREE_SUBALLOCATION_SIZE_TO_REGISTER)
+            {
+                ++freeSuballocationsToRegister;
+            }
+
+            // Margin required between allocations - every free space must be at least that large.
+            D3D12MA_VALIDATE(subAlloc.size >= D3D12MA_DEBUG_MARGIN);
+        }
+        else
+        {
+            D3D12MA_VALIDATE(subAlloc.allocation->GetOffset() == subAlloc.offset);
+            D3D12MA_VALIDATE(subAlloc.allocation->GetSize() == subAlloc.size);
+
+            // Margin required between allocations - previous allocation must be free.
+            D3D12MA_VALIDATE(D3D12MA_DEBUG_MARGIN == 0 || prevFree);
+        }
+
+        calculatedOffset += subAlloc.size;
+        prevFree = currFree;
+    }
+
+    // Number of free suballocations registered in m_FreeSuballocationsBySize doesn't
+    // match expected one.
+    D3D12MA_VALIDATE(m_FreeSuballocationsBySize.size() == freeSuballocationsToRegister);
+
+    UINT64 lastSize = 0;
+    for(size_t i = 0; i < m_FreeSuballocationsBySize.size(); ++i)
+    {
+        SuballocationList::iterator suballocItem = m_FreeSuballocationsBySize[i];
+
+        // Only free suballocations can be registered in m_FreeSuballocationsBySize.
+        D3D12MA_VALIDATE(suballocItem->type == SUBALLOCATION_TYPE_FREE);
+        // They must be sorted by size ascending.
+        D3D12MA_VALIDATE(suballocItem->size >= lastSize);
+
+        lastSize = suballocItem->size;
+    }
+
+    // Check if totals match calculacted values.
+    D3D12MA_VALIDATE(ValidateFreeSuballocationList());
+    D3D12MA_VALIDATE(calculatedOffset == GetSize());
+    D3D12MA_VALIDATE(calculatedSumFreeSize == m_SumFreeSize);
+    D3D12MA_VALIDATE(calculatedFreeCount == m_FreeCount);
+
+    return true;
+}
+
+UINT64 BlockMetadata_Generic::GetUnusedRangeSizeMax() const
+{
+    if(!m_FreeSuballocationsBySize.empty())
+    {
+        return m_FreeSuballocationsBySize.back()->size;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+bool BlockMetadata_Generic::IsEmpty() const
+{
+    return (m_Suballocations.size() == 1) && (m_FreeCount == 1);
+}
+
+bool BlockMetadata_Generic::CreateAllocationRequest(
+    UINT currentFrameIndex,
+    UINT frameInUseCount,
+    UINT64 bufferImageGranularity,
+    UINT64 allocSize,
+    UINT64 allocAlignment,
+    bool upperAddress,
+    SuballocationType allocType,
+    bool canMakeOtherLost,
+    UINT strategy,
+    VmaAllocationRequest* pAllocationRequest)
+{
+    D3D12MA_ASSERT(allocSize > 0);
+    D3D12MA_ASSERT(!upperAddress);
+    D3D12MA_ASSERT(allocType != SUBALLOCATION_TYPE_FREE);
+    D3D12MA_ASSERT(pAllocationRequest != NULL);
+    D3D12MA_HEAVY_ASSERT(Validate());
+
+    pAllocationRequest->type = AllocationRequestType::Normal;
+
+    // There is not enough total free space in this block to fullfill the request: Early return.
+    if(canMakeOtherLost == false &&
+        m_SumFreeSize < allocSize + 2 * D3D12MA_DEBUG_MARGIN)
+    {
+        return false;
+    }
+
+    // New algorithm, efficiently searching freeSuballocationsBySize.
+    const size_t freeSuballocCount = m_FreeSuballocationsBySize.size();
+    if(freeSuballocCount > 0)
+    {
+        //if(strategy == VMA_ALLOCATION_CREATE_STRATEGY_BEST_FIT_BIT)
+        {
+            // Find first free suballocation with size not less than allocSize + 2 * D3D12MA_DEBUG_MARGIN.
+            SuballocationList::iterator* const it = BinaryFindFirstNotLess(
+                m_FreeSuballocationsBySize.data(),
+                m_FreeSuballocationsBySize.data() + freeSuballocCount,
+                allocSize + 2 * D3D12MA_DEBUG_MARGIN,
+                SuballocationItemSizeLess());
+            size_t index = it - m_FreeSuballocationsBySize.data();
+            for(; index < freeSuballocCount; ++index)
+            {
+                if(CheckAllocation(
+                    currentFrameIndex,
+                    frameInUseCount,
+                    bufferImageGranularity,
+                    allocSize,
+                    allocAlignment,
+                    allocType,
+                    m_FreeSuballocationsBySize[index],
+                    false, // canMakeOtherLost
+                    &pAllocationRequest->offset,
+                    &pAllocationRequest->itemsToMakeLostCount,
+                    &pAllocationRequest->sumFreeSize,
+                    &pAllocationRequest->sumItemSize))
+                {
+                    pAllocationRequest->item = m_FreeSuballocationsBySize[index];
+                    return true;
+                }
+            }
+        }
+#if 0
+        else if(strategy == VMA_ALLOCATION_INTERNAL_STRATEGY_MIN_OFFSET)
+        {
+            for(SuballocationList::iterator it = m_Suballocations.begin();
+                it != m_Suballocations.end();
+                ++it)
+            {
+                if(it->type == SUBALLOCATION_TYPE_FREE && CheckAllocation(
+                    currentFrameIndex,
+                    frameInUseCount,
+                    bufferImageGranularity,
+                    allocSize,
+                    allocAlignment,
+                    allocType,
+                    it,
+                    false, // canMakeOtherLost
+                    &pAllocationRequest->offset,
+                    &pAllocationRequest->itemsToMakeLostCount,
+                    &pAllocationRequest->sumFreeSize,
+                    &pAllocationRequest->sumItemSize))
+                {
+                    pAllocationRequest->item = it;
+                    return true;
+                }
+            }
+        }
+        else // WORST_FIT, FIRST_FIT
+        {
+            // Search staring from biggest suballocations.
+            for(size_t index = freeSuballocCount; index--; )
+            {
+                if(CheckAllocation(
+                    currentFrameIndex,
+                    frameInUseCount,
+                    bufferImageGranularity,
+                    allocSize,
+                    allocAlignment,
+                    allocType,
+                    m_FreeSuballocationsBySize[index],
+                    false, // canMakeOtherLost
+                    &pAllocationRequest->offset,
+                    &pAllocationRequest->itemsToMakeLostCount,
+                    &pAllocationRequest->sumFreeSize,
+                    &pAllocationRequest->sumItemSize))
+                {
+                    pAllocationRequest->item = m_FreeSuballocationsBySize[index];
+                    return true;
+                }
+            }
+        }
+#endif
+    }
+
+#if 0
+    if(canMakeOtherLost)
+    {
+        // Brute-force algorithm. TODO: Come up with something better.
+
+        bool found = false;
+        VmaAllocationRequest tmpAllocRequest = {};
+        tmpAllocRequest.type = AllocationRequestType::Normal;
+        for(SuballocationList::iterator suballocIt = m_Suballocations.begin();
+            suballocIt != m_Suballocations.end();
+            ++suballocIt)
+        {
+            if(suballocIt->type == SUBALLOCATION_TYPE_FREE ||
+                suballocIt->hAllocation->CanBecomeLost())
+            {
+                if(CheckAllocation(
+                    currentFrameIndex,
+                    frameInUseCount,
+                    bufferImageGranularity,
+                    allocSize,
+                    allocAlignment,
+                    allocType,
+                    suballocIt,
+                    canMakeOtherLost,
+                    &tmpAllocRequest.offset,
+                    &tmpAllocRequest.itemsToMakeLostCount,
+                    &tmpAllocRequest.sumFreeSize,
+                    &tmpAllocRequest.sumItemSize))
+                {
+                    if(strategy == VMA_ALLOCATION_CREATE_STRATEGY_FIRST_FIT_BIT)
+                    {
+                        *pAllocationRequest = tmpAllocRequest;
+                        pAllocationRequest->item = suballocIt;
+                        break;
+                    }
+                    if(!found || tmpAllocRequest.CalcCost() < pAllocationRequest->CalcCost())
+                    {
+                        *pAllocationRequest = tmpAllocRequest;
+                        pAllocationRequest->item = suballocIt;
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        return found;
+    }
+#endif
+
+    return false;
+}
+
+void BlockMetadata_Generic::Alloc(
+    const VmaAllocationRequest& request,
+    SuballocationType type,
+    UINT64 allocSize,
+    Allocation* allocation)
+{
+    D3D12MA_ASSERT(request.type == AllocationRequestType::Normal);
+    D3D12MA_ASSERT(request.item != m_Suballocations.end());
+    Suballocation& suballoc = *request.item;
+    // Given suballocation is a free block.
+    D3D12MA_ASSERT(suballoc.type == SUBALLOCATION_TYPE_FREE);
+    // Given offset is inside this suballocation.
+    D3D12MA_ASSERT(request.offset >= suballoc.offset);
+    const UINT64 paddingBegin = request.offset - suballoc.offset;
+    D3D12MA_ASSERT(suballoc.size >= paddingBegin + allocSize);
+    const UINT64 paddingEnd = suballoc.size - paddingBegin - allocSize;
+
+    // Unregister this free suballocation from m_FreeSuballocationsBySize and update
+    // it to become used.
+    UnregisterFreeSuballocation(request.item);
+
+    suballoc.offset = request.offset;
+    suballoc.size = allocSize;
+    suballoc.type = type;
+    suballoc.allocation = allocation;
+
+    // If there are any free bytes remaining at the end, insert new free suballocation after current one.
+    if(paddingEnd)
+    {
+        Suballocation paddingSuballoc = {};
+        paddingSuballoc.offset = request.offset + allocSize;
+        paddingSuballoc.size = paddingEnd;
+        paddingSuballoc.type = SUBALLOCATION_TYPE_FREE;
+        SuballocationList::iterator next = request.item;
+        ++next;
+        const SuballocationList::iterator paddingEndItem =
+            m_Suballocations.insert(next, paddingSuballoc);
+        RegisterFreeSuballocation(paddingEndItem);
+    }
+
+    // If there are any free bytes remaining at the beginning, insert new free suballocation before current one.
+    if(paddingBegin)
+    {
+        Suballocation paddingSuballoc = {};
+        paddingSuballoc.offset = request.offset - paddingBegin;
+        paddingSuballoc.size = paddingBegin;
+        paddingSuballoc.type = SUBALLOCATION_TYPE_FREE;
+        const SuballocationList::iterator paddingBeginItem =
+            m_Suballocations.insert(request.item, paddingSuballoc);
+        RegisterFreeSuballocation(paddingBeginItem);
+    }
+
+    // Update totals.
+    m_FreeCount = m_FreeCount - 1;
+    if(paddingBegin > 0)
+    {
+        ++m_FreeCount;
+    }
+    if(paddingEnd > 0)
+    {
+        ++m_FreeCount;
+    }
+    m_SumFreeSize -= allocSize;
+}
+
+void BlockMetadata_Generic::Free(const Allocation* allocation)
+{
+    for(SuballocationList::iterator suballocItem = m_Suballocations.begin();
+        suballocItem != m_Suballocations.end();
+        ++suballocItem)
+    {
+        Suballocation& suballoc = *suballocItem;
+        if(suballoc.allocation == allocation)
+        {
+            FreeSuballocation(suballocItem);
+            D3D12MA_HEAVY_ASSERT(Validate());
+            return;
+        }
+    }
+    D3D12MA_ASSERT(0 && "Not found!");
+}
+
+void BlockMetadata_Generic::FreeAtOffset(UINT64 offset)
+{
+    for(SuballocationList::iterator suballocItem = m_Suballocations.begin();
+        suballocItem != m_Suballocations.end();
+        ++suballocItem)
+    {
+        Suballocation& suballoc = *suballocItem;
+        if(suballoc.offset == offset)
+        {
+            FreeSuballocation(suballocItem);
+            return;
+        }
+    }
+    D3D12MA_ASSERT(0 && "Not found!");
+}
+
+bool BlockMetadata_Generic::ValidateFreeSuballocationList() const
+{
+    UINT64 lastSize = 0;
+    for(size_t i = 0, count = m_FreeSuballocationsBySize.size(); i < count; ++i)
+    {
+        const SuballocationList::iterator it = m_FreeSuballocationsBySize[i];
+
+        D3D12MA_VALIDATE(it->type == SUBALLOCATION_TYPE_FREE);
+        D3D12MA_VALIDATE(it->size >= MIN_FREE_SUBALLOCATION_SIZE_TO_REGISTER);
+        D3D12MA_VALIDATE(it->size >= lastSize);
+        lastSize = it->size;
+    }
+    return true;
+}
+
+bool BlockMetadata_Generic::CheckAllocation(
+    UINT currentFrameIndex,
+    UINT frameInUseCount,
+    UINT64 bufferImageGranularity,
+    UINT64 allocSize,
+    UINT64 allocAlignment,
+    SuballocationType allocType,
+    SuballocationList::const_iterator suballocItem,
+    bool canMakeOtherLost,
+    UINT64* pOffset,
+    size_t* itemsToMakeLostCount,
+    UINT64* pSumFreeSize,
+    UINT64* pSumItemSize) const
+{
+    D3D12MA_ASSERT(allocSize > 0);
+    D3D12MA_ASSERT(allocType != SUBALLOCATION_TYPE_FREE);
+    D3D12MA_ASSERT(suballocItem != m_Suballocations.cend());
+    D3D12MA_ASSERT(pOffset != NULL);
+
+    *itemsToMakeLostCount = 0;
+    *pSumFreeSize = 0;
+    *pSumItemSize = 0;
+
+#if 0
+    if(canMakeOtherLost)
+    {
+        if(suballocItem->type == SUBALLOCATION_TYPE_FREE)
+        {
+            *pSumFreeSize = suballocItem->size;
+        }
+        else
+        {
+            if(suballocItem->hAllocation->CanBecomeLost() &&
+                suballocItem->hAllocation->GetLastUseFrameIndex() + frameInUseCount < currentFrameIndex)
+            {
+                ++*itemsToMakeLostCount;
+                *pSumItemSize = suballocItem->size;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        // Remaining size is too small for this request: Early return.
+        if(GetSize() - suballocItem->offset < allocSize)
+        {
+            return false;
+        }
+
+        // Start from offset equal to beginning of this suballocation.
+        *pOffset = suballocItem->offset;
+
+        // Apply D3D12MA_DEBUG_MARGIN at the beginning.
+        if(D3D12MA_DEBUG_MARGIN > 0)
+        {
+            *pOffset += D3D12MA_DEBUG_MARGIN;
+        }
+
+        // Apply alignment.
+        *pOffset = AlignUp(*pOffset, allocAlignment);
+
+        // Check previous suballocations for BufferImageGranularity conflicts.
+        // Make bigger alignment if necessary.
+        if(bufferImageGranularity > 1)
+        {
+            bool bufferImageGranularityConflict = false;
+            SuballocationList::const_iterator prevSuballocItem = suballocItem;
+            while(prevSuballocItem != m_Suballocations.cbegin())
+            {
+                --prevSuballocItem;
+                const Suballocation& prevSuballoc = *prevSuballocItem;
+                if(VmaBlocksOnSamePage(prevSuballoc.offset, prevSuballoc.size, *pOffset, bufferImageGranularity))
+                {
+                    if(VmaIsBufferImageGranularityConflict(prevSuballoc.type, allocType))
+                    {
+                        bufferImageGranularityConflict = true;
+                        break;
+                    }
+                }
+                else
+                    // Already on previous page.
+                    break;
+            }
+            if(bufferImageGranularityConflict)
+            {
+                *pOffset = AlignUp(*pOffset, bufferImageGranularity);
+            }
+        }
+
+        // Now that we have final *pOffset, check if we are past suballocItem.
+        // If yes, return false - this function should be called for another suballocItem as starting point.
+        if(*pOffset >= suballocItem->offset + suballocItem->size)
+        {
+            return false;
+        }
+
+        // Calculate padding at the beginning based on current offset.
+        const UINT64 paddingBegin = *pOffset - suballocItem->offset;
+
+        // Calculate required margin at the end.
+        const UINT64 requiredEndMargin = D3D12MA_DEBUG_MARGIN;
+
+        const UINT64 totalSize = paddingBegin + allocSize + requiredEndMargin;
+        // Another early return check.
+        if(suballocItem->offset + totalSize > GetSize())
+        {
+            return false;
+        }
+
+        // Advance lastSuballocItem until desired size is reached.
+        // Update itemsToMakeLostCount.
+        SuballocationList::const_iterator lastSuballocItem = suballocItem;
+        if(totalSize > suballocItem->size)
+        {
+            UINT64 remainingSize = totalSize - suballocItem->size;
+            while(remainingSize > 0)
+            {
+                ++lastSuballocItem;
+                if(lastSuballocItem == m_Suballocations.cend())
+                {
+                    return false;
+                }
+                if(lastSuballocItem->type == SUBALLOCATION_TYPE_FREE)
+                {
+                    *pSumFreeSize += lastSuballocItem->size;
+                }
+                else
+                {
+                    D3D12MA_ASSERT(lastSuballocItem->hAllocation != NULL);
+                    if(lastSuballocItem->hAllocation->CanBecomeLost() &&
+                        lastSuballocItem->hAllocation->GetLastUseFrameIndex() + frameInUseCount < currentFrameIndex)
+                    {
+                        ++*itemsToMakeLostCount;
+                        *pSumItemSize += lastSuballocItem->size;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                remainingSize = (lastSuballocItem->size < remainingSize) ?
+                    remainingSize - lastSuballocItem->size : 0;
+            }
+        }
+
+        // Check next suballocations for BufferImageGranularity conflicts.
+        // If conflict exists, we must mark more allocations lost or fail.
+        if(bufferImageGranularity > 1)
+        {
+            SuballocationList::const_iterator nextSuballocItem = lastSuballocItem;
+            ++nextSuballocItem;
+            while(nextSuballocItem != m_Suballocations.cend())
+            {
+                const Suballocation& nextSuballoc = *nextSuballocItem;
+                if(VmaBlocksOnSamePage(*pOffset, allocSize, nextSuballoc.offset, bufferImageGranularity))
+                {
+                    if(VmaIsBufferImageGranularityConflict(allocType, nextSuballoc.type))
+                    {
+                        D3D12MA_ASSERT(nextSuballoc.hAllocation != NULL);
+                        if(nextSuballoc.hAllocation->CanBecomeLost() &&
+                            nextSuballoc.hAllocation->GetLastUseFrameIndex() + frameInUseCount < currentFrameIndex)
+                        {
+                            ++*itemsToMakeLostCount;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                }
+                else
+                {
+                    // Already on next page.
+                    break;
+                }
+                ++nextSuballocItem;
+            }
+        }
+    }
+    else
+#endif
+    {
+        const Suballocation& suballoc = *suballocItem;
+        D3D12MA_ASSERT(suballoc.type == SUBALLOCATION_TYPE_FREE);
+
+        *pSumFreeSize = suballoc.size;
+
+        // Size of this suballocation is too small for this request: Early return.
+        if(suballoc.size < allocSize)
+        {
+            return false;
+        }
+
+        // Start from offset equal to beginning of this suballocation.
+        *pOffset = suballoc.offset;
+
+        // Apply D3D12MA_DEBUG_MARGIN at the beginning.
+        if(D3D12MA_DEBUG_MARGIN > 0)
+        {
+            *pOffset += D3D12MA_DEBUG_MARGIN;
+        }
+
+        // Apply alignment.
+        *pOffset = AlignUp(*pOffset, allocAlignment);
+
+        // Calculate padding at the beginning based on current offset.
+        const UINT64 paddingBegin = *pOffset - suballoc.offset;
+
+        // Calculate required margin at the end.
+        const UINT64 requiredEndMargin = D3D12MA_DEBUG_MARGIN;
+
+        // Fail if requested size plus margin before and after is bigger than size of this suballocation.
+        if(paddingBegin + allocSize + requiredEndMargin > suballoc.size)
+        {
+            return false;
+        }
+    }
+
+    // All tests passed: Success. pOffset is already filled.
+    return true;
+}
+
+void BlockMetadata_Generic::MergeFreeWithNext(SuballocationList::iterator item)
+{
+    D3D12MA_ASSERT(item != m_Suballocations.end());
+    D3D12MA_ASSERT(item->type == SUBALLOCATION_TYPE_FREE);
+
+    SuballocationList::iterator nextItem = item;
+    ++nextItem;
+    D3D12MA_ASSERT(nextItem != m_Suballocations.end());
+    D3D12MA_ASSERT(nextItem->type == SUBALLOCATION_TYPE_FREE);
+
+    item->size += nextItem->size;
+    --m_FreeCount;
+    m_Suballocations.erase(nextItem);
+}
+
+SuballocationList::iterator BlockMetadata_Generic::FreeSuballocation(SuballocationList::iterator suballocItem)
+{
+    // Change this suballocation to be marked as free.
+    Suballocation& suballoc = *suballocItem;
+    suballoc.type = SUBALLOCATION_TYPE_FREE;
+    suballoc.allocation = NULL;
+
+    // Update totals.
+    ++m_FreeCount;
+    m_SumFreeSize += suballoc.size;
+
+    // Merge with previous and/or next suballocation if it's also free.
+    bool mergeWithNext = false;
+    bool mergeWithPrev = false;
+
+    SuballocationList::iterator nextItem = suballocItem;
+    ++nextItem;
+    if((nextItem != m_Suballocations.end()) && (nextItem->type == SUBALLOCATION_TYPE_FREE))
+    {
+        mergeWithNext = true;
+    }
+
+    SuballocationList::iterator prevItem = suballocItem;
+    if(suballocItem != m_Suballocations.begin())
+    {
+        --prevItem;
+        if(prevItem->type == SUBALLOCATION_TYPE_FREE)
+        {
+            mergeWithPrev = true;
+        }
+    }
+
+    if(mergeWithNext)
+    {
+        UnregisterFreeSuballocation(nextItem);
+        MergeFreeWithNext(suballocItem);
+    }
+
+    if(mergeWithPrev)
+    {
+        UnregisterFreeSuballocation(prevItem);
+        MergeFreeWithNext(prevItem);
+        RegisterFreeSuballocation(prevItem);
+        return prevItem;
+    }
+    else
+    {
+        RegisterFreeSuballocation(suballocItem);
+        return suballocItem;
+    }
+}
+
+void BlockMetadata_Generic::RegisterFreeSuballocation(SuballocationList::iterator item)
+{
+    D3D12MA_ASSERT(item->type == SUBALLOCATION_TYPE_FREE);
+    D3D12MA_ASSERT(item->size > 0);
+
+    // You may want to enable this validation at the beginning or at the end of
+    // this function, depending on what do you want to check.
+    D3D12MA_HEAVY_ASSERT(ValidateFreeSuballocationList());
+
+    if(item->size >= MIN_FREE_SUBALLOCATION_SIZE_TO_REGISTER)
+    {
+        if(m_FreeSuballocationsBySize.empty())
+        {
+            m_FreeSuballocationsBySize.push_back(item);
+        }
+        else
+        {
+            m_FreeSuballocationsBySize.InsertSorted(item, SuballocationItemSizeLess());
+        }
+    }
+
+    //D3D12MA_HEAVY_ASSERT(ValidateFreeSuballocationList());
+}
+
+
+void BlockMetadata_Generic::UnregisterFreeSuballocation(SuballocationList::iterator item)
+{
+    D3D12MA_ASSERT(item->type == SUBALLOCATION_TYPE_FREE);
+    D3D12MA_ASSERT(item->size > 0);
+
+    // You may want to enable this validation at the beginning or at the end of
+    // this function, depending on what do you want to check.
+    D3D12MA_HEAVY_ASSERT(ValidateFreeSuballocationList());
+
+    if(item->size >= MIN_FREE_SUBALLOCATION_SIZE_TO_REGISTER)
+    {
+        SuballocationList::iterator* const it = BinaryFindFirstNotLess(
+            m_FreeSuballocationsBySize.data(),
+            m_FreeSuballocationsBySize.data() + m_FreeSuballocationsBySize.size(),
+            item,
+            SuballocationItemSizeLess());
+        for(size_t index = it - m_FreeSuballocationsBySize.data();
+            index < m_FreeSuballocationsBySize.size();
+            ++index)
+        {
+            if(m_FreeSuballocationsBySize[index] == item)
+            {
+                m_FreeSuballocationsBySize.remove(index);
+                return;
+            }
+            D3D12MA_ASSERT((m_FreeSuballocationsBySize[index]->size == item->size) && "Not found.");
+        }
+        D3D12MA_ASSERT(0 && "Not found.");
+    }
+
+    //D3D12MA_HEAVY_ASSERT(ValidateFreeSuballocationList());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Private class AllocatorPimpl definition and implementation
 
 class AllocatorPimpl
@@ -1346,8 +2352,10 @@ HRESULT AllocatorPimpl::CreateResource(
         pOptimizedClearValue, riidResource, ppvResource);
     if(SUCCEEDED(hr))
     {
+        D3D12_RESOURCE_ALLOCATION_INFO resAllocInfo = m_Device->GetResourceAllocationInfo(0, 1, pResourceDesc);
+
         Allocation* alloc = D3D12MA_NEW(m_AllocationCallbacks, Allocation)();
-        alloc->Init(&m_AllocationCallbacks);
+        alloc->InitCommitted(&m_AllocationCallbacks, resAllocInfo.SizeInBytes);
         *ppAllocation = alloc;
     }
     return hr;
@@ -1359,6 +2367,42 @@ HRESULT AllocatorPimpl::CreateResource(
 void Allocation::Release()
 {
     D3D12MA_DELETE(*m_AllocationCallbacks, this);
+}
+
+UINT64 Allocation::GetOffset()
+{
+    switch(m_Type)
+    {
+    case TYPE_COMMITTED:
+        return 0;
+    default:
+        D3D12MA_ASSERT(0);
+        return 0;
+    }
+}
+
+UINT64 Allocation::GetSize()
+{
+    switch(m_Type)
+    {
+    case TYPE_COMMITTED:
+        return m_Committed.size;
+    default:
+        D3D12MA_ASSERT(0);
+        return 0;
+    }
+}
+
+ID3D12Heap* Allocation::GetHeap()
+{
+    switch(m_Type)
+    {
+    case TYPE_COMMITTED:
+        return NULL;
+    default:
+        D3D12MA_ASSERT(0);
+        return 0;
+    }
 }
 
 Allocation::Allocation()
@@ -1375,9 +2419,10 @@ Allocation::~Allocation()
     // Use Release method instead.
 }
 
-void Allocation::Init(const ALLOCATION_CALLBACKS* allocationCallbacks)
+void Allocation::InitCommitted(const ALLOCATION_CALLBACKS* allocationCallbacks, UINT64 size)
 {
     m_AllocationCallbacks = allocationCallbacks;
+    m_Committed.size = size;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
