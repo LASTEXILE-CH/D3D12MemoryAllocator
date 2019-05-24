@@ -1285,6 +1285,15 @@ public:
     const D3D12_FEATURE_DATA_D3D12_OPTIONS& GetD3D12Options() const { return m_D3D12Options; }
     bool SupportsResourceHeapTier2() const { return m_D3D12Options.ResourceHeapTier >= D3D12_RESOURCE_HEAP_TIER_2; }
 
+    HRESULT CreateResource(
+        const ALLOCATION_DESC* pAllocDesc,
+        const D3D12_RESOURCE_DESC* pResourceDesc,
+        D3D12_RESOURCE_STATES InitialResourceState,
+        const D3D12_CLEAR_VALUE *pOptimizedClearValue,
+        Allocation** ppAllocation,
+        REFIID riidResource,
+        void** ppvResource);
+
 private:
     friend class Allocator;
 
@@ -1321,6 +1330,56 @@ AllocatorPimpl::~AllocatorPimpl()
 {
 }
 
+HRESULT AllocatorPimpl::CreateResource(
+    const ALLOCATION_DESC* pAllocDesc,
+    const D3D12_RESOURCE_DESC* pResourceDesc,
+    D3D12_RESOURCE_STATES InitialResourceState,
+    const D3D12_CLEAR_VALUE *pOptimizedClearValue,
+    Allocation** ppAllocation,
+    REFIID riidResource,
+    void** ppvResource)
+{
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = pAllocDesc->HeapType;
+    HRESULT hr = m_Device->CreateCommittedResource(
+        &heapProps, D3D12_HEAP_FLAG_NONE, pResourceDesc, InitialResourceState,
+        pOptimizedClearValue, riidResource, ppvResource);
+    if(SUCCEEDED(hr))
+    {
+        Allocation* alloc = D3D12MA_NEW(m_AllocationCallbacks, Allocation)();
+        alloc->Init(&m_AllocationCallbacks);
+        *ppAllocation = alloc;
+    }
+    return hr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Public class Allocation implementation
+
+void Allocation::Release()
+{
+    D3D12MA_DELETE(*m_AllocationCallbacks, this);
+}
+
+Allocation::Allocation()
+{
+    // Must be empty because Allocation objects are allocated out of PoolAllocator
+    // and may not call constructor and destructor at the right time.
+    // Use Init* methods instead.
+}
+
+Allocation::~Allocation()
+{
+    // Must be empty because Allocation objects are allocated out of PoolAllocator
+    // and may not call constructor and destructor at the right time.
+    // Use Release method instead.
+}
+
+void Allocation::Init(const ALLOCATION_CALLBACKS* allocationCallbacks)
+{
+    m_AllocationCallbacks = allocationCallbacks;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Public class Allocator implementation
 
@@ -1341,9 +1400,24 @@ void Allocator::Release()
     D3D12MA_DELETE(allocationCallbacksCopy, this);
 }
 
+
+
 const D3D12_FEATURE_DATA_D3D12_OPTIONS& Allocator::GetD3D12Options() const
 {
     return m_Pimpl->GetD3D12Options();
+}
+
+HRESULT Allocator::CreateResource(
+    const ALLOCATION_DESC* pAllocDesc,
+    const D3D12_RESOURCE_DESC* pResourceDesc,
+    D3D12_RESOURCE_STATES InitialResourceState,
+    const D3D12_CLEAR_VALUE *pOptimizedClearValue,
+    Allocation** ppAllocation,
+    REFIID riidResource,
+    void** ppvResource)
+{
+    D3D12MA_ASSERT(pAllocDesc && pResourceDesc && ppAllocation && riidResource != IID_NULL && ppvResource);
+    return m_Pimpl->CreateResource(pAllocDesc, pResourceDesc, InitialResourceState, pOptimizedClearValue, ppAllocation, riidResource, ppvResource);
 }
 
 void Allocator::Test()

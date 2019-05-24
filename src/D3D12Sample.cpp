@@ -73,10 +73,13 @@ UINT g_RtvDescriptorSize; // size of the rtv descriptor on the g_Device (all fro
 CComPtr<ID3D12PipelineState> g_PipelineStateObject;
 CComPtr<ID3D12RootSignature> g_RootSignature;
 CComPtr<ID3D12Resource> g_VertexBuffer;
+D3D12MA::Allocation* g_VertexBufferAllocation;
 CComPtr<ID3D12Resource> g_IndexBuffer;
+D3D12MA::Allocation* g_IndexBufferAllocation;
 D3D12_VERTEX_BUFFER_VIEW g_VertexBufferView;
 D3D12_INDEX_BUFFER_VIEW g_IndexBufferView;
 CComPtr<ID3D12Resource> g_DepthStencilBuffer;
+D3D12MA::Allocation* g_DepthStencilAllocation;
 CComPtr<ID3D12DescriptorHeap> g_DepthStencilDescriptorHeap;
 
 struct Vertex {
@@ -101,6 +104,7 @@ struct ConstantBufferPerObject
     mat4 WorldViewProj;
 };
 size_t ConstantBufferPerObjectAlignedSize = AlignUp<size_t>(sizeof(ConstantBufferPerObject), 256);
+D3D12MA::Allocation* g_CbPerObjectUploadHeapAllocations[FRAME_BUFFER_COUNT];
 CComPtr<ID3D12Resource> g_CbPerObjectUploadHeaps[FRAME_BUFFER_COUNT];
 void* g_CbPerObjectAddress[FRAME_BUFFER_COUNT];
 mat4 cameraProjMat; // this will store our projection matrix
@@ -115,9 +119,11 @@ uint32_t numCubeIndices; // the number of indices to draw the cube
 
 CComPtr<ID3D12DescriptorHeap> g_MainDescriptorHeap[FRAME_BUFFER_COUNT];
 CComPtr<ID3D12Resource> g_ConstantBufferUploadHeap[FRAME_BUFFER_COUNT];
+D3D12MA::Allocation* g_ConstantBufferUploadAllocation[FRAME_BUFFER_COUNT];
 void* g_ConstantBufferAddress[FRAME_BUFFER_COUNT];
 
 CComPtr<ID3D12Resource> g_Texture;
+D3D12MA::Allocation* g_TextureAllocation;
 
 static void* const CUSTOM_ALLOCATION_USER_DATA = (void*)(uintptr_t)0xDEADC0DE;
 
@@ -509,8 +515,8 @@ void InitD3D() // initializes direct3d 12
     depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
     depthOptimizedClearValue.DepthStencil.Stencil = 0;
 
-    D3D12_HEAP_PROPERTIES depthStencilHeapProps = {};
-    depthStencilHeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12MA::ALLOCATION_DESC depthStencilAllocDesc = {};
+    depthStencilAllocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
     D3D12_RESOURCE_DESC depthStencilResourceDesc = {};
     depthStencilResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     depthStencilResourceDesc.Alignment = 0;
@@ -523,12 +529,12 @@ void InitD3D() // initializes direct3d 12
     depthStencilResourceDesc.SampleDesc.Quality = 0;
     depthStencilResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     depthStencilResourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-    CHECK_HR( g_Device->CreateCommittedResource(
-        &depthStencilHeapProps,
-        D3D12_HEAP_FLAG_NONE,
+    CHECK_HR( g_Allocator->CreateResource(
+        &depthStencilAllocDesc,
         &depthStencilResourceDesc,
         D3D12_RESOURCE_STATE_DEPTH_WRITE,
         &depthOptimizedClearValue,
+        &g_DepthStencilAllocation,
         IID_PPV_ARGS(&g_DepthStencilBuffer)
     ) );
     CHECK_HR( g_DepthStencilBuffer->SetName(L"Depth/Stencil Resource Heap") );
@@ -632,8 +638,8 @@ void InitD3D() // initializes direct3d 12
 
     for (int i = 0; i < FRAME_BUFFER_COUNT; ++i)
     {
-        D3D12_HEAP_PROPERTIES constantBufferUploadHeapProps = {};
-        constantBufferUploadHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+        D3D12MA::ALLOCATION_DESC constantBufferUploadAllocDesc = {};
+        constantBufferUploadAllocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
         D3D12_RESOURCE_DESC constantBufferResourceDesc = {};
         constantBufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
         constantBufferResourceDesc.Alignment = 0;
@@ -646,12 +652,12 @@ void InitD3D() // initializes direct3d 12
         constantBufferResourceDesc.SampleDesc.Quality = 0;
         constantBufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
         constantBufferResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-        CHECK_HR( g_Device->CreateCommittedResource(
-            &constantBufferUploadHeapProps,
-            D3D12_HEAP_FLAG_NONE,
+        CHECK_HR( g_Allocator->CreateResource(
+            &constantBufferUploadAllocDesc,
             &constantBufferResourceDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ,
             nullptr,
+            &g_ConstantBufferUploadAllocation[i],
             IID_PPV_ARGS(&g_ConstantBufferUploadHeap[i])) );
         g_ConstantBufferUploadHeap[i]->SetName(L"Constant Buffer Upload Resource Heap");
 
@@ -756,8 +762,8 @@ void InitD3D() // initializes direct3d 12
     // default heap is memory on the GPU. Only the GPU has access to this memory
     // To get data into this heap, we will have to upload the data using
     // an upload heap
-    D3D12_HEAP_PROPERTIES vertexBufferHeapProps = {};
-    vertexBufferHeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12MA::ALLOCATION_DESC vertexBufferAllocDesc = {};
+    vertexBufferAllocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
     D3D12_RESOURCE_DESC vertexBufferResourceDesc = {};
     vertexBufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     vertexBufferResourceDesc.Alignment = 0;
@@ -771,13 +777,13 @@ void InitD3D() // initializes direct3d 12
     vertexBufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     vertexBufferResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
     ID3D12Resource* vertexBufferPtr;
-    CHECK_HR( device->CreateCommittedResource(
-        &vertexBufferHeapProps, // a default heap
-        D3D12_HEAP_FLAG_NONE, // no flags
+    CHECK_HR( g_Allocator->CreateResource(
+        &vertexBufferAllocDesc,
         &vertexBufferResourceDesc, // resource description for a buffer
         D3D12_RESOURCE_STATE_COPY_DEST, // we will start this heap in the copy destination state since we will copy data
                                         // from the upload heap to this heap
         nullptr, // optimized clear value must be null for this type of resource. used for render targets and depth/stencil buffers
+        &g_VertexBufferAllocation,
         IID_PPV_ARGS(&vertexBufferPtr)) );
     g_VertexBuffer.Attach(vertexBufferPtr);
 
@@ -787,8 +793,8 @@ void InitD3D() // initializes direct3d 12
     // create upload heap
     // upload heaps are used to upload data to the GPU. CPU can write to it, GPU can read from it
     // We will upload the vertex buffer using this heap to the default heap
-    D3D12_HEAP_PROPERTIES vBufferUploadHeapProps = {};
-    vBufferUploadHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+    D3D12MA::ALLOCATION_DESC vBufferUploadAllocDesc = {};
+    vBufferUploadAllocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
     D3D12_RESOURCE_DESC vertexBufferUploadResourceDesc = {};
     vertexBufferUploadResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     vertexBufferUploadResourceDesc.Alignment = 0;
@@ -802,12 +808,13 @@ void InitD3D() // initializes direct3d 12
     vertexBufferUploadResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     vertexBufferUploadResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
     CComPtr<ID3D12Resource> vBufferUploadHeap;
-    CHECK_HR( device->CreateCommittedResource(
-        &vBufferUploadHeapProps, // upload heap
-        D3D12_HEAP_FLAG_NONE, // no flags
+    D3D12MA::Allocation* vBufferUploadHeapAllocation = nullptr;
+    CHECK_HR( g_Allocator->CreateResource(
+        &vBufferUploadAllocDesc,
         &vertexBufferUploadResourceDesc, // resource description for a buffer
         D3D12_RESOURCE_STATE_GENERIC_READ, // GPU will read from this buffer and copy its contents to the default heap
         nullptr,
+        &vBufferUploadHeapAllocation,
         IID_PPV_ARGS(&vBufferUploadHeap)) );
     vBufferUploadHeap->SetName(L"Vertex Buffer Upload Resource Heap");
 
@@ -867,8 +874,8 @@ void InitD3D() // initializes direct3d 12
     size_t iBufferSize = sizeof(iList);
 
     // create default heap to hold index buffer
-    D3D12_HEAP_PROPERTIES indexBufferHeapProps = {};
-    indexBufferHeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12MA::ALLOCATION_DESC indexBufferAllocDesc = {};
+    indexBufferAllocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
     D3D12_RESOURCE_DESC indexBufferResourceDesc = {};
     indexBufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     indexBufferResourceDesc.Alignment = 0;
@@ -881,20 +888,20 @@ void InitD3D() // initializes direct3d 12
     indexBufferResourceDesc.SampleDesc.Quality = 0;
     indexBufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     indexBufferResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-    CHECK_HR( device->CreateCommittedResource(
-        &indexBufferHeapProps, // a default heap
-        D3D12_HEAP_FLAG_NONE, // no flags
+    CHECK_HR( g_Allocator->CreateResource(
+        &indexBufferAllocDesc,
         &indexBufferResourceDesc, // resource description for a buffer
         D3D12_RESOURCE_STATE_COPY_DEST, // start in the copy destination state
         nullptr, // optimized clear value must be null for this type of resource
+        &g_IndexBufferAllocation,
         IID_PPV_ARGS(&g_IndexBuffer)) );
 
     // we can give resource heaps a name so when we debug with the graphics debugger we know what resource we are looking at
     g_IndexBuffer->SetName(L"Index Buffer Resource Heap");
 
     // create upload heap to upload index buffer
-    D3D12_HEAP_PROPERTIES iBufferUploadHeapProps = {};
-    iBufferUploadHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+    D3D12MA::ALLOCATION_DESC iBufferUploadAllocDesc = {};
+    iBufferUploadAllocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
     D3D12_RESOURCE_DESC indexBufferUploadResourceDesc = {};
     indexBufferUploadResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     indexBufferUploadResourceDesc.Alignment = 0;
@@ -908,14 +915,15 @@ void InitD3D() // initializes direct3d 12
     indexBufferUploadResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     indexBufferUploadResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
     CComPtr<ID3D12Resource> iBufferUploadHeap;
-    CHECK_HR( device->CreateCommittedResource(
-        &iBufferUploadHeapProps, // upload heap
-        D3D12_HEAP_FLAG_NONE, // no flags
+    D3D12MA::Allocation* iBufferUploadHeapAllocation = nullptr;
+    CHECK_HR( g_Allocator->CreateResource(
+        &iBufferUploadAllocDesc,
         &indexBufferUploadResourceDesc, // resource description for a buffer
         D3D12_RESOURCE_STATE_GENERIC_READ, // GPU will read from this buffer and copy its contents to the default heap
         nullptr,
+        &iBufferUploadHeapAllocation,
         IID_PPV_ARGS(&iBufferUploadHeap)) );
-    CHECK_HR( vBufferUploadHeap->SetName(L"Index Buffer Upload Resource Heap") );
+    CHECK_HR( iBufferUploadHeap->SetName(L"Index Buffer Upload Resource Heap") );
 
     // store vertex buffer in upload heap
     D3D12_SUBRESOURCE_DATA indexData = {};
@@ -947,8 +955,8 @@ void InitD3D() // initializes direct3d 12
     g_IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
     g_IndexBufferView.SizeInBytes = (UINT)iBufferSize;
 
-    D3D12_HEAP_PROPERTIES cbPerObjectUploadHeapProps = {};
-    cbPerObjectUploadHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+    D3D12MA::ALLOCATION_DESC cbPerObjectUploadAllocDesc = {};
+    cbPerObjectUploadAllocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
     D3D12_RESOURCE_DESC cbPerObjectUploadResourceDesc = {};
     cbPerObjectUploadResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     cbPerObjectUploadResourceDesc.Alignment = 0;
@@ -964,12 +972,12 @@ void InitD3D() // initializes direct3d 12
     for (size_t i = 0; i < FRAME_BUFFER_COUNT; ++i)
     {
         // create resource for cube 1
-        CHECK_HR( g_Device->CreateCommittedResource(
-            &cbPerObjectUploadHeapProps, // this heap will be used to upload the constant buffer data
-            D3D12_HEAP_FLAG_NONE, // no flags
+        CHECK_HR( g_Allocator->CreateResource(
+            &cbPerObjectUploadAllocDesc,
             &cbPerObjectUploadResourceDesc, // size of the resource heap. Must be a multiple of 64KB for single-textures and constant buffers
             D3D12_RESOURCE_STATE_GENERIC_READ, // will be data that is read from so we keep it in the generic read state
             nullptr, // we do not have use an optimized clear value for constant buffers
+            &g_CbPerObjectUploadHeapAllocations[i],
             IID_PPV_ARGS(&g_CbPerObjectUploadHeaps[i])) );
         g_CbPerObjectUploadHeaps[i]->SetName(L"Constant Buffer Upload Resource Heap");
 
@@ -1061,14 +1069,14 @@ void InitD3D() // initializes direct3d 12
         textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
     }
 
-    D3D12_HEAP_PROPERTIES textureHeapProps = {};
-    textureHeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
-    CHECK_HR( device->CreateCommittedResource(
-        &textureHeapProps,
-        D3D12_HEAP_FLAG_NONE,
+    D3D12MA::ALLOCATION_DESC textureAllocDesc = {};
+    textureAllocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+    CHECK_HR( g_Allocator->CreateResource(
+        &textureAllocDesc,
         &textureDesc,
         D3D12_RESOURCE_STATE_COPY_DEST,
         nullptr, // pOptimizedClearValue
+        &g_TextureAllocation,
         IID_PPV_ARGS(&g_Texture)) );
     g_Texture->SetName(L"g_Texture");
 
@@ -1083,8 +1091,8 @@ void InitD3D() // initializes direct3d 12
         nullptr, // pRowSizeInBytes
         &textureUploadBufferSize); // pTotalBytes
 
-    D3D12_HEAP_PROPERTIES textureUploadHeapProps = {};
-    textureUploadHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+    D3D12MA::ALLOCATION_DESC textureUploadAllocDesc = {};
+    textureUploadAllocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
     D3D12_RESOURCE_DESC textureUploadResourceDesc = {};
     textureUploadResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     textureUploadResourceDesc.Alignment = 0;
@@ -1098,12 +1106,13 @@ void InitD3D() // initializes direct3d 12
     textureUploadResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     textureUploadResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
     CComPtr<ID3D12Resource> textureUpload;
-    CHECK_HR( device->CreateCommittedResource(
-        &textureUploadHeapProps,
-        D3D12_HEAP_FLAG_NONE,
+    D3D12MA::Allocation* textureUploadAllocation;
+    CHECK_HR( g_Allocator->CreateResource(
+        &textureUploadAllocDesc,
         &textureUploadResourceDesc,
         D3D12_RESOURCE_STATE_GENERIC_READ,
         nullptr, // pOptimizedClearValue
+        &textureUploadAllocation,
         IID_PPV_ARGS(&textureUpload)) );
     textureUpload->SetName(L"textureUpload");
 
@@ -1144,6 +1153,10 @@ void InitD3D() // initializes direct3d 12
 
     // increment the fence value now, otherwise the buffer might not be uploaded by the time we start drawing
     WaitGPUIdle(g_FrameIndex);
+
+    textureUploadAllocation->Release();
+    iBufferUploadHeapAllocation->Release();
+    vBufferUploadHeapAllocation->Release();
 }
 
 void Update()
@@ -1351,8 +1364,11 @@ void Cleanup() // release com ojects and clean up memory
     WaitGPUIdle(0);
 
     g_Texture.Release();
+    g_TextureAllocation->Release(); g_TextureAllocation = nullptr;
     g_IndexBuffer.Release();
+    g_IndexBufferAllocation->Release(); g_IndexBufferAllocation = nullptr;
     g_VertexBuffer.Release();
+    g_VertexBufferAllocation->Release(); g_VertexBufferAllocation = nullptr;
     g_PipelineStateObject.Release();
     g_RootSignature.Release();
 
@@ -1363,12 +1379,15 @@ void Cleanup() // release com ojects and clean up memory
     for (size_t i = FRAME_BUFFER_COUNT; i--; )
     {
         g_CbPerObjectUploadHeaps[i].Release();
+        g_CbPerObjectUploadHeapAllocations[i]->Release(); g_CbPerObjectUploadHeapAllocations[i] = nullptr;
         g_MainDescriptorHeap[i].Release();
         g_ConstantBufferUploadHeap[i].Release();
+        g_ConstantBufferUploadAllocation[i]->Release(); g_ConstantBufferUploadAllocation[i] = nullptr;
     }
 
     g_DepthStencilDescriptorHeap.Release();
     g_DepthStencilBuffer.Release();
+    g_DepthStencilAllocation->Release(); g_DepthStencilAllocation = nullptr;
     g_RtvDescriptorHeap.Release();
     for (size_t i = FRAME_BUFFER_COUNT; i--; )
     {

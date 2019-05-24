@@ -68,6 +68,26 @@ Project setup goes here TODO...
 namespace D3D12MA
 {
 
+/// \cond INTERNAL
+class AllocatorPimpl;
+/// \endcond
+
+/// Pointer to custom callback function that allocates CPU memory.
+typedef void* (*ALLOCATE_FUNC_PTR)(size_t Size, size_t Alignment, void* pUserData);
+/// Pointer to custom callback function that deallocates CPU memory. pMemory = null show be accepted and ignored.
+typedef void (*FREE_FUNC_PTR)(void* pMemory, void* pUserData);
+
+/// Custom callbacks to CPU memory allocation functions.
+struct ALLOCATION_CALLBACKS
+{
+    /// Allocation function.
+    ALLOCATE_FUNC_PTR pAllocate;
+    /// Dellocation function.
+    FREE_FUNC_PTR pFree;
+    /// Custom data that will be passed to allocation and deallocation functions as `pUserData` parameter.
+    void* pUserData;
+};
+
 /// \brief Bit flags to be used with ALLOCATION_DESC::Flags.
 typedef enum ALLOCATION_FLAGS
 {
@@ -129,7 +149,14 @@ public:
     void Release();
 
 private:
+    friend class AllocatorPimpl;
+    template<typename T> friend void D3D12MA_DELETE(const ALLOCATION_CALLBACKS&, T*);
+
+    const ALLOCATION_CALLBACKS* m_AllocationCallbacks;
+
+    Allocation();
     ~Allocation();
+    void Init(const ALLOCATION_CALLBACKS* allocationCallbacks);
 
     D3D12MA_CLASS_NO_COPY(Allocation)
 };
@@ -143,22 +170,6 @@ typedef enum ALLOCATOR_FLAGS
     */
     ALLOCATOR_FLAG_EXTERNALLY_SYNCHRONIZED = 0x1,
 } ALLOCATOR_FLAGS;
-
-/// Pointer to custom callback function that allocates CPU memory.
-typedef void* (*ALLOCATE_FUNC_PTR)(size_t Size, size_t Alignment, void* pUserData);
-/// Pointer to custom callback function that deallocates CPU memory. pMemory = null show be accepted and ignored.
-typedef void (*FREE_FUNC_PTR)(void* pMemory, void* pUserData);
-
-/// Custom callbacks to CPU memory allocation functions.
-struct ALLOCATION_CALLBACKS
-{
-    /// Allocation function.
-    ALLOCATE_FUNC_PTR pAllocate;
-    /// Dellocation function.
-    FREE_FUNC_PTR pFree;
-    /// Custom data that will be passed to allocation and deallocation functions as `pUserData` parameter.
-    void* pUserData;
-};
 
 /// \brief Parameters of created Allocator object. To be used with CreateAllocator().
 struct ALLOCATOR_DESC
@@ -182,10 +193,6 @@ struct ALLOCATOR_DESC
     const ALLOCATION_CALLBACKS* pAllocationCallbacks;
 };
 
-/// \cond INTERNAL
-class AllocatorPimpl;
-/// \endcond
-
 /**
 \brief Represents main object of this library initialized.
 
@@ -205,8 +212,18 @@ public:
     */
     void Release();
     
+    /// Returns cached options retrieved from D3D12 device.
+    const D3D12_FEATURE_DATA_D3D12_OPTIONS& GetD3D12Options() const;
+
     /** \brief Allocates memory and creates a D3D12 resource. This is the main allocation function.
 
+    The function is similar to `ID3D12Device::CreateCommittedResource`, but it may
+    really call `ID3D12Device::CreatePlacedResource` to assign part of a larger,
+    existing memory heap to the new resource, which is the main purpose of this
+    whole library.
+
+    Two objects are returned: allocation and resource. You need to destroy them
+    both.
     */
     HRESULT CreateResource(
         const ALLOCATION_DESC* pAllocDesc,
@@ -216,9 +233,6 @@ public:
         Allocation** ppAllocation,
         REFIID riidResource,
         void** ppvResource);
-
-    /// Returns cached options retrieved from D3D12 device.
-    const D3D12_FEATURE_DATA_D3D12_OPTIONS& GetD3D12Options() const;
 
     /// \cond INTERNAL
     void Test();
