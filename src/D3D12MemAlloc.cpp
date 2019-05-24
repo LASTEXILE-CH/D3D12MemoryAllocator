@@ -455,6 +455,14 @@ IterT BinaryFindSorted(const IterT& beg, const IterT& end, const KeyT& value, co
     return end;
 }
 
+struct PointerLess
+{
+    bool operator()(const void* lhs, const void* rhs) const
+    {
+        return lhs < rhs;
+    }
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // Private class Vector
 
@@ -1445,11 +1453,9 @@ public:
     virtual bool CreateAllocationRequest(
         UINT currentFrameIndex,
         UINT frameInUseCount,
-        UINT64 bufferImageGranularity,
         UINT64 allocSize,
         UINT64 allocAlignment,
         bool upperAddress,
-        SuballocationType allocType,
         bool canMakeOtherLost,
         UINT strategy,
         VmaAllocationRequest* pAllocationRequest);
@@ -1478,10 +1484,8 @@ private:
     bool CheckAllocation(
         UINT currentFrameIndex,
         UINT frameInUseCount,
-        UINT64 bufferImageGranularity,
         UINT64 allocSize,
         UINT64 allocAlignment,
-        SuballocationType allocType,
         SuballocationList::const_iterator suballocItem,
         bool canMakeOtherLost,
         UINT64* pOffset,
@@ -1502,6 +1506,90 @@ private:
     void UnregisterFreeSuballocation(SuballocationList::iterator item);
 
     D3D12MA_CLASS_NO_COPY(BlockMetadata_Generic)
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class DeviceMemoryBlock definition
+
+/*
+Represents a single block of device memory (heap) with all the data about its
+regions (aka suballocations, #Allocation), assigned and free.
+
+Thread-safety: This class must be externally synchronized.
+*/
+class DeviceMemoryBlock
+{
+public:
+    BlockMetadata* m_pMetadata;
+
+    DeviceMemoryBlock();
+
+    ~DeviceMemoryBlock()
+    {
+        D3D12MA_ASSERT(m_Heap == NULL);
+    }
+
+    // Always call after construction.
+    void Init(
+        AllocatorPimpl* allocator,
+        //VmaPool hParentPool,
+        D3D12_HEAP_TYPE newHeapType,
+        ID3D12Heap* newHeap,
+        UINT64 newSize,
+        UINT id,
+        UINT algorithm);
+    // Always call before destruction.
+    void Destroy(AllocatorPimpl* allocator);
+
+    //VmaPool GetParentPool() const { return m_hParentPool; }
+    ID3D12Heap* GetHeap() const { return m_Heap; }
+    D3D12_HEAP_TYPE GetHeapType() const { return m_HeapType; }
+    UINT GetId() const { return m_Id; }
+
+    // Validates all data structures inside this object. If not valid, returns false.
+    bool Validate() const;
+
+private:
+    //VmaPool m_hParentPool; // VK_NULL_HANDLE if not belongs to custom pool.
+    D3D12_HEAP_TYPE m_HeapType; // TODO needed?
+    UINT m_Id;
+    ID3D12Heap* m_Heap;
+
+    D3D12MA_CLASS_NO_COPY(DeviceMemoryBlock)
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class AllocatorPimpl definition
+
+class AllocatorPimpl
+{
+public:
+    AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLOCATOR_DESC& desc);
+    HRESULT Init();
+    ~AllocatorPimpl();
+
+    const ALLOCATION_CALLBACKS& GetAllocationCallbacks() const { return m_AllocationCallbacks; }
+    const D3D12_FEATURE_DATA_D3D12_OPTIONS& GetD3D12Options() const { return m_D3D12Options; }
+    bool SupportsResourceHeapTier2() const { return m_D3D12Options.ResourceHeapTier >= D3D12_RESOURCE_HEAP_TIER_2; }
+
+    HRESULT CreateResource(
+        const ALLOCATION_DESC* pAllocDesc,
+        const D3D12_RESOURCE_DESC* pResourceDesc,
+        D3D12_RESOURCE_STATES InitialResourceState,
+        const D3D12_CLEAR_VALUE *pOptimizedClearValue,
+        Allocation** ppAllocation,
+        REFIID riidResource,
+        void** ppvResource);
+
+private:
+    friend class Allocator;
+
+    UINT m_Flags; // ALLOCATOR_FLAGS
+    ID3D12Device* m_Device;
+    UINT64 m_PreferredLargeHeapBlockSize;
+    ALLOCATION_CALLBACKS m_AllocationCallbacks;
+
+    D3D12_FEATURE_DATA_D3D12_OPTIONS m_D3D12Options;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1653,18 +1741,15 @@ bool BlockMetadata_Generic::IsEmpty() const
 bool BlockMetadata_Generic::CreateAllocationRequest(
     UINT currentFrameIndex,
     UINT frameInUseCount,
-    UINT64 bufferImageGranularity,
     UINT64 allocSize,
     UINT64 allocAlignment,
     bool upperAddress,
-    SuballocationType allocType,
     bool canMakeOtherLost,
     UINT strategy,
     VmaAllocationRequest* pAllocationRequest)
 {
     D3D12MA_ASSERT(allocSize > 0);
     D3D12MA_ASSERT(!upperAddress);
-    D3D12MA_ASSERT(allocType != SUBALLOCATION_TYPE_FREE);
     D3D12MA_ASSERT(pAllocationRequest != NULL);
     D3D12MA_HEAVY_ASSERT(Validate());
 
@@ -1695,10 +1780,8 @@ bool BlockMetadata_Generic::CreateAllocationRequest(
                 if(CheckAllocation(
                     currentFrameIndex,
                     frameInUseCount,
-                    bufferImageGranularity,
                     allocSize,
                     allocAlignment,
-                    allocType,
                     m_FreeSuballocationsBySize[index],
                     false, // canMakeOtherLost
                     &pAllocationRequest->offset,
@@ -1721,10 +1804,8 @@ bool BlockMetadata_Generic::CreateAllocationRequest(
                 if(it->type == SUBALLOCATION_TYPE_FREE && CheckAllocation(
                     currentFrameIndex,
                     frameInUseCount,
-                    bufferImageGranularity,
                     allocSize,
                     allocAlignment,
-                    allocType,
                     it,
                     false, // canMakeOtherLost
                     &pAllocationRequest->offset,
@@ -1745,10 +1826,8 @@ bool BlockMetadata_Generic::CreateAllocationRequest(
                 if(CheckAllocation(
                     currentFrameIndex,
                     frameInUseCount,
-                    bufferImageGranularity,
                     allocSize,
                     allocAlignment,
-                    allocType,
                     m_FreeSuballocationsBySize[index],
                     false, // canMakeOtherLost
                     &pAllocationRequest->offset,
@@ -1782,10 +1861,8 @@ bool BlockMetadata_Generic::CreateAllocationRequest(
                 if(CheckAllocation(
                     currentFrameIndex,
                     frameInUseCount,
-                    bufferImageGranularity,
                     allocSize,
                     allocAlignment,
-                    allocType,
                     suballocIt,
                     canMakeOtherLost,
                     &tmpAllocRequest.offset,
@@ -1932,10 +2009,8 @@ bool BlockMetadata_Generic::ValidateFreeSuballocationList() const
 bool BlockMetadata_Generic::CheckAllocation(
     UINT currentFrameIndex,
     UINT frameInUseCount,
-    UINT64 bufferImageGranularity,
     UINT64 allocSize,
     UINT64 allocAlignment,
-    SuballocationType allocType,
     SuballocationList::const_iterator suballocItem,
     bool canMakeOtherLost,
     UINT64* pOffset,
@@ -1944,7 +2019,6 @@ bool BlockMetadata_Generic::CheckAllocation(
     UINT64* pSumItemSize) const
 {
     D3D12MA_ASSERT(allocSize > 0);
-    D3D12MA_ASSERT(allocType != SUBALLOCATION_TYPE_FREE);
     D3D12MA_ASSERT(suballocItem != m_Suballocations.cend());
     D3D12MA_ASSERT(pOffset != NULL);
 
@@ -2278,38 +2352,76 @@ void BlockMetadata_Generic::UnregisterFreeSuballocation(SuballocationList::itera
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Private class AllocatorPimpl definition and implementation
+// Private class DeviceMemoryBlock implementation
 
-class AllocatorPimpl
+DeviceMemoryBlock::DeviceMemoryBlock() :
+    m_pMetadata(NULL),
+    m_HeapType(D3D12_HEAP_TYPE_CUSTOM),
+    m_Id(0),
+    m_Heap(NULL)
 {
-public:
-    AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLOCATOR_DESC& desc);
-    HRESULT Init();
-    ~AllocatorPimpl();
+}
 
-    const ALLOCATION_CALLBACKS& GetAllocationCallbacks() const { return m_AllocationCallbacks; }
-    const D3D12_FEATURE_DATA_D3D12_OPTIONS& GetD3D12Options() const { return m_D3D12Options; }
-    bool SupportsResourceHeapTier2() const { return m_D3D12Options.ResourceHeapTier >= D3D12_RESOURCE_HEAP_TIER_2; }
+void DeviceMemoryBlock::Init(
+    AllocatorPimpl* allocator,
+    //VmaPool hParentPool,
+    D3D12_HEAP_TYPE newHeapType,
+    ID3D12Heap* newHeap,
+    UINT64 newSize,
+    UINT id,
+    UINT algorithm)
+{
+    D3D12MA_ASSERT(m_Heap == NULL);
 
-    HRESULT CreateResource(
-        const ALLOCATION_DESC* pAllocDesc,
-        const D3D12_RESOURCE_DESC* pResourceDesc,
-        D3D12_RESOURCE_STATES InitialResourceState,
-        const D3D12_CLEAR_VALUE *pOptimizedClearValue,
-        Allocation** ppAllocation,
-        REFIID riidResource,
-        void** ppvResource);
+    //m_hParentPool = hParentPool;
+    m_HeapType = newHeapType;
+    m_Id = id;
+    m_Heap = newHeap;
 
-private:
-    friend class Allocator;
+    const ALLOCATION_CALLBACKS& allocationCallbacks = allocator->GetAllocationCallbacks();
 
-    UINT m_Flags; // ALLOCATOR_FLAGS
-    ID3D12Device* m_Device;
-    UINT64 m_PreferredLargeHeapBlockSize;
-    ALLOCATION_CALLBACKS m_AllocationCallbacks;
+    switch(algorithm)
+    {
+#if 0
+    case VMA_POOL_CREATE_LINEAR_ALGORITHM_BIT:
+        m_pMetadata = vma_new(hAllocator, VmaBlockMetadata_Linear)(hAllocator);
+        break;
+    case VMA_POOL_CREATE_BUDDY_ALGORITHM_BIT:
+        m_pMetadata = vma_new(hAllocator, VmaBlockMetadata_Buddy)(hAllocator);
+        break;
+#endif
+    default:
+        D3D12MA_ASSERT(0);
+        // Fall-through.
+    case 0:
+        m_pMetadata = D3D12MA_NEW(allocationCallbacks, BlockMetadata_Generic)(&allocationCallbacks);
+    }
+    m_pMetadata->Init(newSize);
+}
 
-    D3D12_FEATURE_DATA_D3D12_OPTIONS m_D3D12Options;
-};
+void DeviceMemoryBlock::Destroy(AllocatorPimpl* allocator)
+{
+    // This is the most important assert in the entire library.
+    // Hitting it means you have some memory leak - unreleased Allocation objects.
+    D3D12MA_ASSERT(m_pMetadata->IsEmpty() && "Some allocations were not freed before destruction of this memory block!");
+
+    D3D12MA_ASSERT(m_Heap != NULL);
+    m_Heap->Release();
+    m_Heap = NULL;
+
+    D3D12MA_DELETE(allocator->GetAllocationCallbacks(), m_pMetadata);
+    m_pMetadata = NULL;
+}
+
+bool DeviceMemoryBlock::Validate() const
+{
+    D3D12MA_VALIDATE(m_Heap && m_pMetadata && m_pMetadata->GetSize() != 0);
+
+    return m_pMetadata->Validate();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class AllocatorPimpl implementation
 
 AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLOCATOR_DESC& desc) :
     m_Flags(desc.Flags),
