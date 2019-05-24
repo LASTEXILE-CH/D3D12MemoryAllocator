@@ -170,7 +170,7 @@ private:
     friend class AllocatorPimpl;
     template<typename T> friend void D3D12MA_DELETE(const ALLOCATION_CALLBACKS&, T*);
 
-    const ALLOCATION_CALLBACKS* m_AllocationCallbacks;
+    AllocatorPimpl* m_Allocator;
     
     enum Type
     {
@@ -184,12 +184,13 @@ private:
         struct
         {
             UINT64 size;
+            D3D12_HEAP_TYPE heapType;
         } m_Committed;
     };
 
     Allocation();
     ~Allocation();
-    void InitCommitted(const ALLOCATION_CALLBACKS* allocationCallbacks, UINT64 size);
+    void InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType);
 
     D3D12MA_CLASS_NO_COPY(Allocation)
 };

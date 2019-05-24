@@ -173,10 +173,10 @@ static inline T D3D12MA_MAX(const T& a, const T& b)
 #endif
 
 #ifndef D3D12MA_RW_MUTEX
-    class D3D12MARWMutex
+    class RWMutex
     {
     public:
-        D3D12MARWMutex() { InitializeSRWLock(&m_Lock); }
+        RWMutex() { InitializeSRWLock(&m_Lock); }
         void LockRead() { AcquireSRWLockShared(&m_Lock); }
         void UnlockRead() { ReleaseSRWLockShared(&m_Lock); }
         void LockWrite() { AcquireSRWLockExclusive(&m_Lock); }
@@ -184,7 +184,7 @@ static inline T D3D12MA_MAX(const T& a, const T& b)
     private:
         SRWLOCK m_Lock;
     };
-    #define D3D12MA_RW_MUTEX D3D12MARWMutex
+    #define D3D12MA_RW_MUTEX RWMutex
 #endif
 
 /*
@@ -356,10 +356,10 @@ private:
 };
 
 // Helper RAII class to lock a RW mutex in constructor and unlock it in destructor (at the end of scope), for reading.
-struct D3D12MAMutexLockRead
+struct MutexLockRead
 {
 public:
-    D3D12MAMutexLockRead(D3D12MA_RW_MUTEX& mutex, bool useMutex) :
+    MutexLockRead(D3D12MA_RW_MUTEX& mutex, bool useMutex) :
         m_pMutex(useMutex ? &mutex : NULL)
     {
         if(m_pMutex)
@@ -367,7 +367,7 @@ public:
             m_pMutex->LockRead();
         }
     }
-    ~D3D12MAMutexLockRead()
+    ~MutexLockRead()
     {
         if(m_pMutex)
         {
@@ -377,14 +377,14 @@ public:
 private:
     D3D12MA_RW_MUTEX* m_pMutex;
 
-    D3D12MA_CLASS_NO_COPY(D3D12MAMutexLockRead)
+    D3D12MA_CLASS_NO_COPY(MutexLockRead)
 };
 
 // Helper RAII class to lock a RW mutex in constructor and unlock it in destructor (at the end of scope), for writing.
-struct D3D12MAMutexLockWrite
+struct MutexLockWrite
 {
 public:
-    D3D12MAMutexLockWrite(D3D12MA_RW_MUTEX& mutex, bool useMutex) :
+    MutexLockWrite(D3D12MA_RW_MUTEX& mutex, bool useMutex) :
         m_pMutex(useMutex ? &mutex : NULL)
     {
         if(m_pMutex)
@@ -392,7 +392,7 @@ public:
             m_pMutex->LockWrite();
         }
     }
-    ~D3D12MAMutexLockWrite()
+    ~MutexLockWrite()
     {
         if(m_pMutex)
         {
@@ -402,7 +402,7 @@ public:
 private:
     D3D12MA_RW_MUTEX* m_pMutex;
 
-    D3D12MA_CLASS_NO_COPY(D3D12MAMutexLockWrite)
+    D3D12MA_CLASS_NO_COPY(MutexLockWrite)
 };
 
 #if D3D12MA_DEBUG_GLOBAL_MUTEX
@@ -462,6 +462,19 @@ struct PointerLess
         return lhs < rhs;
     }
 };
+
+static const UINT HEAP_TYPE_COUNT = 3;
+
+static UINT HeapTypeToIndex(D3D12_HEAP_TYPE type)
+{
+    switch(type)
+    {
+    case D3D12_HEAP_TYPE_DEFAULT:  return 0;
+    case D3D12_HEAP_TYPE_UPLOAD:   return 1;
+    case D3D12_HEAP_TYPE_READBACK: return 2;
+    default: D3D12MA_ASSERT(0); return (UINT)-1;
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private class Vector
@@ -690,7 +703,7 @@ public:
             cmp);
         if((it != end()) && !cmp(*it, value) && !cmp(value, *it))
         {
-            size_t indexToRemove = it - vector.begin();
+            size_t indexToRemove = it - begin();
             remove(indexToRemove);
             return true;
         }
@@ -1581,15 +1594,34 @@ public:
         REFIID riidResource,
         void** ppvResource);
 
+    // Unregisters allocation from the collection of dedicated allocations.
+    // Allocation object must be deleted externally afterwards.
+    void FreeDedicatedMemory(Allocation* allocation);
+
 private:
     friend class Allocator;
 
-    UINT m_Flags; // ALLOCATOR_FLAGS
+    bool m_UseMutex;
     ID3D12Device* m_Device;
     UINT64 m_PreferredLargeHeapBlockSize;
     ALLOCATION_CALLBACKS m_AllocationCallbacks;
 
     D3D12_FEATURE_DATA_D3D12_OPTIONS m_D3D12Options;
+
+    typedef Vector<Allocation*> AllocationVectorType;
+    AllocationVectorType* m_pDedicatedAllocations[HEAP_TYPE_COUNT];
+    D3D12MA_RW_MUTEX m_DedicatedAllocationsMutex[HEAP_TYPE_COUNT];
+
+    // Allocates and registers new committed resource with implicit heap, as dedicated allocation.
+    // Creates and returns Allocation objects.
+    HRESULT AllocateDedicatedMemory(
+        const ALLOCATION_DESC* pAllocDesc,
+        const D3D12_RESOURCE_DESC* pResourceDesc,
+        D3D12_RESOURCE_STATES InitialResourceState,
+        const D3D12_CLEAR_VALUE *pOptimizedClearValue,
+        Allocation** ppAllocation,
+        REFIID riidResource,
+        void** ppvResource);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2424,13 +2456,23 @@ bool DeviceMemoryBlock::Validate() const
 // Private class AllocatorPimpl implementation
 
 AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLOCATOR_DESC& desc) :
-    m_Flags(desc.Flags),
+    m_UseMutex((desc.Flags & ALLOCATOR_FLAG_EXTERNALLY_SYNCHRONIZED) == 0),
     m_Device(desc.pDevice),
     m_PreferredLargeHeapBlockSize(desc.PreferredLargeHeapBlockSize),
     m_AllocationCallbacks(allocationCallbacks)
 {
     // desc.pAllocationCallbacks intentionally ignored here, preprocessed by CreateAllocator.
     ZeroMemory(&m_D3D12Options, sizeof(m_D3D12Options));
+
+    ZeroMemory(m_pDedicatedAllocations, sizeof(m_pDedicatedAllocations));
+
+    for(UINT heapTypeIndex = 0; heapTypeIndex < HEAP_TYPE_COUNT; ++heapTypeIndex)
+    {
+        //const UINT64 preferredBlockSize = CalcPreferredBlockSize(heapTypeIndex);
+        // ...
+
+        m_pDedicatedAllocations[heapTypeIndex] = D3D12MA_NEW(GetAllocationCallbacks(), AllocationVectorType)(GetAllocationCallbacks());
+    }
 }
 
 HRESULT AllocatorPimpl::Init()
@@ -2446,9 +2488,37 @@ HRESULT AllocatorPimpl::Init()
 
 AllocatorPimpl::~AllocatorPimpl()
 {
+    for(UINT i = HEAP_TYPE_COUNT; i--; )
+    {
+        if(m_pDedicatedAllocations[i] && !m_pDedicatedAllocations[i]->empty())
+        {
+            D3D12MA_ASSERT(0 && "Unfreed dedicated allocations found.");
+        }
+
+        D3D12MA_DELETE(GetAllocationCallbacks(), m_pDedicatedAllocations[i]);
+    }
 }
 
 HRESULT AllocatorPimpl::CreateResource(
+    const ALLOCATION_DESC* pAllocDesc,
+    const D3D12_RESOURCE_DESC* pResourceDesc,
+    D3D12_RESOURCE_STATES InitialResourceState,
+    const D3D12_CLEAR_VALUE *pOptimizedClearValue,
+    Allocation** ppAllocation,
+    REFIID riidResource,
+    void** ppvResource)
+{
+    if(pAllocDesc->HeapType != D3D12_HEAP_TYPE_DEFAULT &&
+        pAllocDesc->HeapType != D3D12_HEAP_TYPE_UPLOAD &&
+        pAllocDesc->HeapType != D3D12_HEAP_TYPE_READBACK)
+    {
+        return E_INVALIDARG;
+    }
+
+    return AllocateDedicatedMemory(pAllocDesc, pResourceDesc, InitialResourceState, pOptimizedClearValue, ppAllocation, riidResource, ppvResource);
+}
+
+HRESULT AllocatorPimpl::AllocateDedicatedMemory(
     const ALLOCATION_DESC* pAllocDesc,
     const D3D12_RESOURCE_DESC* pResourceDesc,
     D3D12_RESOURCE_STATES InitialResourceState,
@@ -2467,10 +2537,33 @@ HRESULT AllocatorPimpl::CreateResource(
         D3D12_RESOURCE_ALLOCATION_INFO resAllocInfo = m_Device->GetResourceAllocationInfo(0, 1, pResourceDesc);
 
         Allocation* alloc = D3D12MA_NEW(m_AllocationCallbacks, Allocation)();
-        alloc->InitCommitted(&m_AllocationCallbacks, resAllocInfo.SizeInBytes);
+        alloc->InitCommitted(this, resAllocInfo.SizeInBytes, pAllocDesc->HeapType);
         *ppAllocation = alloc;
+
+        const UINT heapTypeIndex = HeapTypeToIndex(pAllocDesc->HeapType);
+
+        {
+            MutexLockWrite lock(m_DedicatedAllocationsMutex[heapTypeIndex], m_UseMutex);
+            AllocationVectorType* const dedicatedAllocations = m_pDedicatedAllocations[heapTypeIndex];
+            D3D12MA_ASSERT(dedicatedAllocations);
+            dedicatedAllocations->InsertSorted(alloc, PointerLess());
+        }
     }
     return hr;
+}
+
+void AllocatorPimpl::FreeDedicatedMemory(Allocation* allocation)
+{
+    D3D12MA_ASSERT(allocation && allocation->m_Type == Allocation::TYPE_COMMITTED);
+    const UINT heapTypeIndex = HeapTypeToIndex(allocation->m_Committed.heapType);
+
+    {
+        MutexLockWrite lock(m_DedicatedAllocationsMutex[heapTypeIndex], m_UseMutex);
+        AllocationVectorType* const dedicatedAllocations = m_pDedicatedAllocations[heapTypeIndex];
+        D3D12MA_ASSERT(dedicatedAllocations);
+        bool success = dedicatedAllocations->RemoveSorted(allocation, PointerLess());
+        D3D12MA_ASSERT(success);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2478,7 +2571,13 @@ HRESULT AllocatorPimpl::CreateResource(
 
 void Allocation::Release()
 {
-    D3D12MA_DELETE(*m_AllocationCallbacks, this);
+    switch(m_Type)
+    {
+    case TYPE_COMMITTED:
+        m_Allocator->FreeDedicatedMemory(this);
+        break;
+    }
+    D3D12MA_DELETE(m_Allocator->GetAllocationCallbacks(), this);
 }
 
 UINT64 Allocation::GetOffset()
@@ -2531,10 +2630,12 @@ Allocation::~Allocation()
     // Use Release method instead.
 }
 
-void Allocation::InitCommitted(const ALLOCATION_CALLBACKS* allocationCallbacks, UINT64 size)
+void Allocation::InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType)
 {
-    m_AllocationCallbacks = allocationCallbacks;
+    m_Allocator = allocator;
+    m_Type = TYPE_COMMITTED;
     m_Committed.size = size;
+    m_Committed.heapType = heapType;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
