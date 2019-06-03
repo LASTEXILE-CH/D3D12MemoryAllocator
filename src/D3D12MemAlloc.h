@@ -62,7 +62,6 @@ Project setup goes here TODO...
 #define FACILITY_D3D12MA 3542
 /// \endcond
 
-/// Test error code TODO remove
 #define D3D12MA_E_VALIDATION_FAILED   MAKE_HRESULT(SEVERITY_ERROR, FACILITY_D3D12MA, 1)
 
 namespace D3D12MA
@@ -70,6 +69,8 @@ namespace D3D12MA
 
 /// \cond INTERNAL
 class AllocatorPimpl;
+class DeviceMemoryBlock;
+class BlockVector;
 /// \endcond
 
 /// Pointer to custom callback function that allocates CPU memory.
@@ -168,6 +169,7 @@ public:
 
 private:
     friend class AllocatorPimpl;
+    friend class BlockVector;
     template<typename T> friend void D3D12MA_DELETE(const ALLOCATION_CALLBACKS&, T*);
 
     AllocatorPimpl* m_Allocator;
@@ -175,7 +177,7 @@ private:
     enum Type
     {
         TYPE_COMMITTED,
-        TYPE_RESERVED,
+        TYPE_PLACED,
         TYPE_COUNT
     } m_Type;
 
@@ -186,11 +188,21 @@ private:
             UINT64 size;
             D3D12_HEAP_TYPE heapType;
         } m_Committed;
+
+        struct
+        {
+            UINT64 offset;
+            UINT64 size;
+            UINT64 alignment;
+            DeviceMemoryBlock* block;
+        } m_Placed;
     };
 
     Allocation();
     ~Allocation();
     void InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType);
+    void InitPlaced(AllocatorPimpl* allocator, UINT64 offset, UINT64 size, UINT64 alignment, DeviceMemoryBlock* block);
+    DeviceMemoryBlock* GetBlock();
 
     D3D12MA_CLASS_NO_COPY(Allocation)
 };
