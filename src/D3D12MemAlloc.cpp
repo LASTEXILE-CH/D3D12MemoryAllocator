@@ -1633,6 +1633,8 @@ public:
         Allocation* hAllocation);
 
 private:
+    static UINT64 HeapFlagsToAlignment(D3D12_HEAP_FLAGS flags);
+
     AllocatorPimpl* const m_hAllocator;
     Pool* const m_hParentPool;
     const D3D12_HEAP_TYPE m_HeapType;
@@ -3136,6 +3138,27 @@ void BlockVector::Free(Allocation* hAllocation)
     }
 }
 
+UINT64 BlockVector::HeapFlagsToAlignment(D3D12_HEAP_FLAGS flags)
+{
+    /*
+    Documentation of D3D12_HEAP_DESC structure says:
+
+    - D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT   defined as 64KB.
+    - D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT   defined as 4MB. An
+      application must decide whether the heap will contain multi-sample
+      anti-aliasing (MSAA), in which case, the application must choose [this flag].
+
+    https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_heap_desc
+    */
+
+    const D3D12_HEAP_FLAGS denyAllTexturesFlags =
+        D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES | D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES;
+    const bool canContainMsaaResources =
+        (flags & denyAllTexturesFlags) != denyAllTexturesFlags;
+    return canContainMsaaResources ?
+        D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+}
+
 UINT64 BlockVector::CalcMaxBlockSize() const
 {
     UINT64 result = 0;
@@ -3256,7 +3279,7 @@ HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
     D3D12_HEAP_DESC heapDesc = {};
     heapDesc.SizeInBytes = blockSize;
     heapDesc.Properties.Type = m_HeapType;
-    heapDesc.Alignment = D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT; // TODO
+    heapDesc.Alignment = HeapFlagsToAlignment(m_HeapFlags);
     heapDesc.Flags = m_HeapFlags;
 
     ID3D12Heap* heap = NULL;
