@@ -114,12 +114,6 @@ typedef enum ALLOCATION_FLAGS
     If ALLOCATION_DESC::pPool is not null, this flag is implied and ignored. (TODO not yet implemented)
     */
     ALLOCATION_FLAG_NEVER_ALLOCATE = 0x2,
-
-    /** \brief Set this flag to use a memory that will be persistently mapped and retrieve pointer to it.
-
-    Pointer to mapped memory will be returned through ALLOCATION_INFO::pMappedData.
-    */
-    ALLOCATION_FLAG_MAPPED = 0x4,
 } ALLOCATION_FLAGS;
 
 /// \brief Parameters of created Allocation object. To be used with Allocator::CreateResource.
@@ -232,11 +226,11 @@ struct ALLOCATOR_DESC
     /// Direct3D device object that the allocator should be attached to.
     ID3D12Device* pDevice;
     
-    /** \brief Preferred size of a single `ID3D12Heap` block to be allocated from large heaps > 1 GiB. Optional.
+    /** \brief Preferred size of a single `ID3D12Heap` block to be allocated.
     
     Set to 0 to use default, which is currently 256 MiB.
     */
-    UINT64 PreferredLargeHeapBlockSize;
+    UINT64 PreferredBlockSize;
     
     /** \brief Custom CPU memory allocation callbacks. Optional.
 

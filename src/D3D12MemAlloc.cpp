@@ -237,9 +237,9 @@ If providing your own implementation, you need to implement a subset of std::ato
    #define D3D12MA_SMALL_HEAP_MAX_SIZE (1024ull * 1024 * 1024)
 #endif
 
-#ifndef D3D12MA_DEFAULT_LARGE_HEAP_BLOCK_SIZE
-   /// Default size of a block allocated as single VkDeviceMemory from a "large" heap.
-   #define D3D12MA_DEFAULT_LARGE_HEAP_BLOCK_SIZE (256ull * 1024 * 1024)
+#ifndef D3D12MA_DEFAULT_BLOCK_SIZE
+   /// Default size of a block allocated as single ID3D12Heap.
+   #define D3D12MA_DEFAULT_BLOCK_SIZE (256ull * 1024 * 1024)
 #endif
 
 // Returns number of bits set to 1 in (v).
@@ -1722,7 +1722,7 @@ private:
 
     bool m_UseMutex;
     ID3D12Device* m_Device;
-    UINT64 m_PreferredLargeHeapBlockSize;
+    UINT64 m_PreferredBlockSize;
     ALLOCATION_CALLBACKS m_AllocationCallbacks;
 
     D3D12_FEATURE_DATA_D3D12_OPTIONS m_D3D12Options;
@@ -1764,7 +1764,7 @@ private:
     */
     UINT CalcDefaultPoolCount() const;
     UINT CalcDefaultPoolIndex(const ALLOCATION_DESC& allocDesc, const D3D12_RESOURCE_DESC& resourceDesc) const;
-    void CalcDefaultPoolParams(D3D12_HEAP_TYPE& outHeapType, D3D12_HEAP_FLAGS& outHeapFlags, UINT64& outPreferredBlockSize, UINT index) const;
+    void CalcDefaultPoolParams(D3D12_HEAP_TYPE& outHeapType, D3D12_HEAP_FLAGS& outHeapFlags, UINT index) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3294,7 +3294,7 @@ HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
 AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLOCATOR_DESC& desc) :
     m_UseMutex((desc.Flags & ALLOCATOR_FLAG_EXTERNALLY_SYNCHRONIZED) == 0),
     m_Device(desc.pDevice),
-    m_PreferredLargeHeapBlockSize(desc.PreferredLargeHeapBlockSize),
+    m_PreferredBlockSize(desc.PreferredBlockSize != 0 ? desc.PreferredBlockSize : D3D12MA_DEFAULT_BLOCK_SIZE),
     m_AllocationCallbacks(allocationCallbacks)
 {
     // desc.pAllocationCallbacks intentionally ignored here, preprocessed by CreateAllocator.
@@ -3305,9 +3305,6 @@ AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, 
 
     for(UINT heapTypeIndex = 0; heapTypeIndex < HEAP_TYPE_COUNT; ++heapTypeIndex)
     {
-        //const UINT64 preferredBlockSize = CalcPreferredBlockSize(heapTypeIndex);
-        // ...
-
         m_pDedicatedAllocations[heapTypeIndex] = D3D12MA_NEW(GetAllocationCallbacks(), AllocationVectorType)(GetAllocationCallbacks());
     }
 }
@@ -3325,15 +3322,14 @@ HRESULT AllocatorPimpl::Init()
     {
         D3D12_HEAP_TYPE heapType;
         D3D12_HEAP_FLAGS heapFlags;
-        UINT64 preferredBlockSize = 0;
-        CalcDefaultPoolParams(heapType, heapFlags, preferredBlockSize, i);
+        CalcDefaultPoolParams(heapType, heapFlags, i);
 
         m_BlockVectors[i] = D3D12MA_NEW(GetAllocationCallbacks(), BlockVector)(
-            this,
+            this, // hAllocator
             NULL, // parentPool
-            heapType,
-            heapFlags,
-            preferredBlockSize,
+            heapType, // heapType
+            heapFlags, // heapFlags
+            m_PreferredBlockSize,
             0, // minBlockCount
             SIZE_MAX, // maxBlockCount
             0, // TODO frameInUseCount
@@ -3541,7 +3537,7 @@ UINT AllocatorPimpl::CalcDefaultPoolIndex(const ALLOCATION_DESC& allocDesc, cons
     return poolIndex;
 }
 
-void AllocatorPimpl::CalcDefaultPoolParams(D3D12_HEAP_TYPE& outHeapType, D3D12_HEAP_FLAGS& outHeapFlags, UINT64& outPreferredBlockSize, UINT index) const
+void AllocatorPimpl::CalcDefaultPoolParams(D3D12_HEAP_TYPE& outHeapType, D3D12_HEAP_FLAGS& outHeapFlags, UINT index) const
 {
     outHeapType = D3D12_HEAP_TYPE_DEFAULT;
     outHeapFlags = D3D12_HEAP_FLAG_NONE;
@@ -3578,8 +3574,6 @@ void AllocatorPimpl::CalcDefaultPoolParams(D3D12_HEAP_TYPE& outHeapType, D3D12_H
     default:
         D3D12MA_ASSERT(0);
     }
-
-    outPreferredBlockSize = D3D12MA_DEFAULT_LARGE_HEAP_BLOCK_SIZE; // TODO
 }
 
 void AllocatorPimpl::FreeDedicatedMemory(Allocation* allocation)
@@ -3801,7 +3795,7 @@ HRESULT CreateAllocator(const ALLOCATOR_DESC* pDesc, Allocator** ppAllocator)
 {
     D3D12MA_ASSERT(pDesc && ppAllocator);
     D3D12MA_ASSERT(pDesc->pDevice);
-    D3D12MA_ASSERT(pDesc->PreferredLargeHeapBlockSize == 0 || (pDesc->PreferredLargeHeapBlockSize >= 16 && pDesc->PreferredLargeHeapBlockSize < 0x10000000000ull));
+    D3D12MA_ASSERT(pDesc->PreferredBlockSize == 0 || (pDesc->PreferredBlockSize >= 16 && pDesc->PreferredBlockSize < 0x10000000000ull));
 
     ALLOCATION_CALLBACKS allocationCallbacks;
     SetupAllocationCallbacks(allocationCallbacks, *pDesc);
