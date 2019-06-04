@@ -156,7 +156,7 @@ public:
 
     Works also with committed resources.
     */
-    UINT64 GetSize();
+    UINT64 GetSize() { return m_Size; }
 
     /** \brief Returns memory heap that the resource is created in.
 
@@ -177,19 +177,18 @@ private:
         TYPE_PLACED,
         TYPE_COUNT
     } m_Type;
+    UINT64 m_Size;
 
     union
     {
         struct
         {
-            UINT64 size;
             D3D12_HEAP_TYPE heapType;
         } m_Committed;
 
         struct
         {
             UINT64 offset;
-            UINT64 size;
             UINT64 alignment;
             DeviceMemoryBlock* block;
         } m_Placed;
@@ -198,7 +197,7 @@ private:
     Allocation();
     ~Allocation();
     void InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType);
-    void InitPlaced(AllocatorPimpl* allocator, UINT64 offset, UINT64 size, UINT64 alignment, DeviceMemoryBlock* block);
+    void InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, DeviceMemoryBlock* block);
     DeviceMemoryBlock* GetBlock();
 
     D3D12MA_CLASS_NO_COPY(Allocation)

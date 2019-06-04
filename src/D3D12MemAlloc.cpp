@@ -3260,8 +3260,8 @@ HRESULT BlockVector::AllocateFromBlock(
         pBlock->m_pMetadata->Alloc(currRequest, size, *pAllocation);
         (*pAllocation)->InitPlaced(
             m_hAllocator,
-            currRequest.offset,
             size,
+            currRequest.offset,
             alignment,
             pBlock);
         D3D12MA_HEAVY_ASSERT(pBlock->Validate());
@@ -3675,20 +3675,6 @@ UINT64 Allocation::GetOffset()
     }
 }
 
-UINT64 Allocation::GetSize()
-{
-    switch(m_Type)
-    {
-    case TYPE_COMMITTED:
-        return m_Committed.size;
-    case TYPE_PLACED:
-        return m_Placed.size;
-    default:
-        D3D12MA_ASSERT(0);
-        return 0;
-    }
-}
-
 ID3D12Heap* Allocation::GetHeap()
 {
     switch(m_Type)
@@ -3721,16 +3707,16 @@ void Allocation::InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEA
 {
     m_Allocator = allocator;
     m_Type = TYPE_COMMITTED;
-    m_Committed.size = size;
+    m_Size = size;
     m_Committed.heapType = heapType;
 }
 
-void Allocation::InitPlaced(AllocatorPimpl* allocator, UINT64 offset, UINT64 size, UINT64 alignment, DeviceMemoryBlock* block)
+void Allocation::InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, DeviceMemoryBlock* block)
 {
     m_Allocator = allocator;
     m_Type = TYPE_PLACED;
+    m_Size = size;
     m_Placed.offset = offset;
-    m_Placed.size = size;
     m_Placed.alignment = alignment;
     m_Placed.block = block;
 }
