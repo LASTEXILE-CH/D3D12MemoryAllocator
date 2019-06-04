@@ -22,6 +22,7 @@
 
 #include "D3D12MemAlloc.h"
 #include "Common.h"
+#include "Tests.h"
 #include <atomic>
 
 namespace VS
@@ -33,55 +34,56 @@ namespace PS
     #include "Shaders\PS_Compiled.h"
 }
 
-const wchar_t * const CLASS_NAME = L"D3D12MemAllocSample";
-const wchar_t * const WINDOW_TITLE = L"Direct3D 12 Memory Allocator Sample";
-const int SIZE_X = 1024;
-const int SIZE_Y = 576; 
-const bool FULLSCREEN = false;
-const UINT PRESENT_SYNC_INTERVAL = 1;
-const DXGI_FORMAT RENDER_TARGET_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
-const DXGI_FORMAT DEPTH_STENCIL_FORMAT = DXGI_FORMAT_D32_FLOAT;
-const size_t FRAME_BUFFER_COUNT = 3; // number of buffers we want, 2 for double buffering, 3 for tripple buffering
+static const wchar_t * const CLASS_NAME = L"D3D12MemAllocSample";
+static const wchar_t * const WINDOW_TITLE = L"Direct3D 12 Memory Allocator Sample";
+static const int SIZE_X = 1024;
+static const int SIZE_Y = 576; 
+static const bool FULLSCREEN = false;
+static const UINT PRESENT_SYNC_INTERVAL = 1;
+static const DXGI_FORMAT RENDER_TARGET_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
+static const DXGI_FORMAT DEPTH_STENCIL_FORMAT = DXGI_FORMAT_D32_FLOAT;
+static const size_t FRAME_BUFFER_COUNT = 3; // number of buffers we want, 2 for double buffering, 3 for tripple buffering
 static const D3D_FEATURE_LEVEL MY_D3D_FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
 
-const bool ENABLE_DEBUG_LAYER = true;
-const bool ENABLE_CPU_ALLOCATION_CALLBACKS = true;
-const bool ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT = true;
+static const bool ENABLE_DEBUG_LAYER = true;
+static const bool ENABLE_CPU_ALLOCATION_CALLBACKS = true;
+static const bool ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT = true;
 
-HINSTANCE g_Instance;
-HWND g_Wnd;
+static HINSTANCE g_Instance;
+static HWND g_Wnd;
 
-UINT64 g_TimeOffset; // In ms.
-UINT64 g_TimeValue; // Time since g_TimeOffset, in ms.
-float g_Time; // g_TimeValue converted to float, in seconds.
-float g_TimeDelta;
+static UINT64 g_TimeOffset; // In ms.
+static UINT64 g_TimeValue; // Time since g_TimeOffset, in ms.
+static float g_Time; // g_TimeValue converted to float, in seconds.
+static float g_TimeDelta;
 
-CComPtr<ID3D12Device> g_Device; // direct3d g_Device
+CComPtr<ID3D12Device> g_Device;
 D3D12MA::Allocator* g_Allocator;
-CComPtr<IDXGISwapChain3> g_SwapChain; // swapchain used to switch between render targets
-CComPtr<ID3D12CommandQueue> g_CommandQueue; // container for command lists
-CComPtr<ID3D12DescriptorHeap> g_RtvDescriptorHeap; // a descriptor heap to hold resources like the render targets
-CComPtr<ID3D12Resource> g_RenderTargets[FRAME_BUFFER_COUNT]; // number of render targets equal to buffer count
-CComPtr<ID3D12CommandAllocator> g_CommandAllocators[FRAME_BUFFER_COUNT]; // we want enough allocators for each buffer * number of threads (we only have one thread)
-CComPtr<ID3D12GraphicsCommandList> g_CommandList; // a command list we can record commands into, then execute them to render the frame
-CComPtr<ID3D12Fence> g_Fences[FRAME_BUFFER_COUNT];    // an object that is locked while our command list is being executed by the gpu. We need as many 
-                                                      //as we have allocators (more if we want to know when the gpu is finished with an asset)
-HANDLE g_FenceEvent; // a handle to an event when our g_Fences is unlocked by the gpu
-UINT64 g_FenceValues[FRAME_BUFFER_COUNT]; // this value is incremented each frame. each g_Fences will have its own value
-UINT g_FrameIndex; // current rtv we are on
-UINT g_RtvDescriptorSize; // size of the rtv descriptor on the g_Device (all front and back buffers will be the same size)
 
-CComPtr<ID3D12PipelineState> g_PipelineStateObject;
-CComPtr<ID3D12RootSignature> g_RootSignature;
-CComPtr<ID3D12Resource> g_VertexBuffer;
-D3D12MA::Allocation* g_VertexBufferAllocation;
-CComPtr<ID3D12Resource> g_IndexBuffer;
-D3D12MA::Allocation* g_IndexBufferAllocation;
-D3D12_VERTEX_BUFFER_VIEW g_VertexBufferView;
-D3D12_INDEX_BUFFER_VIEW g_IndexBufferView;
-CComPtr<ID3D12Resource> g_DepthStencilBuffer;
-D3D12MA::Allocation* g_DepthStencilAllocation;
-CComPtr<ID3D12DescriptorHeap> g_DepthStencilDescriptorHeap;
+static CComPtr<IDXGISwapChain3> g_SwapChain; // swapchain used to switch between render targets
+static CComPtr<ID3D12CommandQueue> g_CommandQueue; // container for command lists
+static CComPtr<ID3D12DescriptorHeap> g_RtvDescriptorHeap; // a descriptor heap to hold resources like the render targets
+static CComPtr<ID3D12Resource> g_RenderTargets[FRAME_BUFFER_COUNT]; // number of render targets equal to buffer count
+static CComPtr<ID3D12CommandAllocator> g_CommandAllocators[FRAME_BUFFER_COUNT]; // we want enough allocators for each buffer * number of threads (we only have one thread)
+static CComPtr<ID3D12GraphicsCommandList> g_CommandList; // a command list we can record commands into, then execute them to render the frame
+static CComPtr<ID3D12Fence> g_Fences[FRAME_BUFFER_COUNT];    // an object that is locked while our command list is being executed by the gpu. We need as many 
+                                                      //as we have allocators (more if we want to know when the gpu is finished with an asset)
+static HANDLE g_FenceEvent; // a handle to an event when our g_Fences is unlocked by the gpu
+static UINT64 g_FenceValues[FRAME_BUFFER_COUNT]; // this value is incremented each frame. each g_Fences will have its own value
+static UINT g_FrameIndex; // current rtv we are on
+static UINT g_RtvDescriptorSize; // size of the rtv descriptor on the g_Device (all front and back buffers will be the same size)
+
+static CComPtr<ID3D12PipelineState> g_PipelineStateObject;
+static CComPtr<ID3D12RootSignature> g_RootSignature;
+static CComPtr<ID3D12Resource> g_VertexBuffer;
+static D3D12MA::Allocation* g_VertexBufferAllocation;
+static CComPtr<ID3D12Resource> g_IndexBuffer;
+static D3D12MA::Allocation* g_IndexBufferAllocation;
+static D3D12_VERTEX_BUFFER_VIEW g_VertexBufferView;
+static D3D12_INDEX_BUFFER_VIEW g_IndexBufferView;
+static CComPtr<ID3D12Resource> g_DepthStencilBuffer;
+static D3D12MA::Allocation* g_DepthStencilAllocation;
+static CComPtr<ID3D12DescriptorHeap> g_DepthStencilDescriptorHeap;
 
 struct Vertex {
     vec3 pos;
@@ -1330,6 +1332,17 @@ static void OnKeyDown(WPARAM key)
 {
     switch (key)
     {
+    case 'T':
+        try
+        {
+            Test();
+        }
+        catch(const std::exception& ex)
+        {
+            wprintf(L"ERROR: %hs\n", ex.what());
+        }
+        break;
+
     case VK_ESCAPE:
         PostMessage(g_Wnd, WM_CLOSE, 0, 0);
         break;
