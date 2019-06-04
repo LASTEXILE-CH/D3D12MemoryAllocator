@@ -1449,7 +1449,7 @@ public:
     virtual void FreeAtOffset(UINT64 offset) = 0;
 
 protected:
-    const ALLOCATION_CALLBACKS* GetAllocationCallbacks() const { return m_pAllocationCallbacks; }
+    const ALLOCATION_CALLBACKS* GetAllocs() const { return m_pAllocationCallbacks; }
 
 private:
     UINT64 m_Size;
@@ -1683,6 +1683,7 @@ private:
         Allocation** pAllocation);
 
     HRESULT CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex);
+    HRESULT CreateD3d12Heap(ID3D12Heap*& outHeap, UINT64 size) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1698,7 +1699,8 @@ public:
     ~AllocatorPimpl();
 
     ID3D12Device* GetDevice() const { return m_Device; }
-    const ALLOCATION_CALLBACKS& GetAllocationCallbacks() const { return m_AllocationCallbacks; }
+    // Shortcut for "Allocation Callbacks", because this function is called so often.
+    const ALLOCATION_CALLBACKS& GetAllocs() const { return m_AllocationCallbacks; }
     const D3D12_FEATURE_DATA_D3D12_OPTIONS& GetD3D12Options() const { return m_D3D12Options; }
     bool SupportsResourceHeapTier2() const { return m_D3D12Options.ResourceHeapTier >= D3D12_RESOURCE_HEAP_TIER_2; }
     bool UseMutex() const { return m_UseMutex; }
@@ -2557,7 +2559,7 @@ void DeviceMemoryBlock::Init(
     m_Id = id;
     m_Heap = newHeap;
 
-    const ALLOCATION_CALLBACKS& allocationCallbacks = allocator->GetAllocationCallbacks();
+    const ALLOCATION_CALLBACKS& allocs = allocator->GetAllocs();
 
     switch(algorithm)
     {
@@ -2573,7 +2575,7 @@ void DeviceMemoryBlock::Init(
         D3D12MA_ASSERT(0);
         // Fall-through.
     case 0:
-        m_pMetadata = D3D12MA_NEW(allocationCallbacks, BlockMetadata_Generic)(&allocationCallbacks);
+        m_pMetadata = D3D12MA_NEW(allocs, BlockMetadata_Generic)(&allocs);
     }
     m_pMetadata->Init(newSize);
 }
@@ -2588,7 +2590,7 @@ void DeviceMemoryBlock::Destroy(AllocatorPimpl* allocator)
     m_Heap->Release();
     m_Heap = NULL;
 
-    D3D12MA_DELETE(allocator->GetAllocationCallbacks(), m_pMetadata);
+    D3D12MA_DELETE(allocator->GetAllocs(), m_pMetadata);
     m_pMetadata = NULL;
 }
 
@@ -2626,7 +2628,7 @@ BlockVector::BlockVector(
     m_ExplicitBlockSize(explicitBlockSize),
     m_Algorithm(algorithm),
     m_HasEmptyBlock(false),
-    m_Blocks(hAllocator->GetAllocationCallbacks()),
+    m_Blocks(hAllocator->GetAllocs()),
     m_NextBlockId(0)
 {
 }
@@ -2636,7 +2638,7 @@ BlockVector::~BlockVector()
     for(size_t i = m_Blocks.size(); i--; )
     {
         m_Blocks[i]->Destroy(m_hAllocator);
-        D3D12MA_DELETE(m_hAllocator->GetAllocationCallbacks(), m_Blocks[i]);
+        D3D12MA_DELETE(m_hAllocator->GetAllocs(), m_Blocks[i]);
     }
 }
 
@@ -3134,7 +3136,7 @@ void BlockVector::Free(Allocation* hAllocation)
     {
         //VMA_DEBUG_LOG("    Deleted empty allocation");
         pBlockToDelete->Destroy(m_hAllocator);
-        D3D12MA_DELETE(m_hAllocator->GetAllocationCallbacks(), pBlockToDelete);
+        D3D12MA_DELETE(m_hAllocator->GetAllocs(), pBlockToDelete);
     }
 }
 
@@ -3248,7 +3250,7 @@ HRESULT BlockVector::AllocateFromBlock(
             m_HasEmptyBlock = false;
         }
 
-        *pAllocation = D3D12MA_NEW(m_hAllocator->GetAllocationCallbacks(), Allocation)();
+        *pAllocation = D3D12MA_NEW(m_hAllocator->GetAllocs(), Allocation)();
         pBlock->m_pMetadata->Alloc(currRequest, size, *pAllocation);
         (*pAllocation)->InitPlaced(
             m_hAllocator,
@@ -3276,23 +3278,14 @@ HRESULT BlockVector::AllocateFromBlock(
 
 HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
 {
-    D3D12_HEAP_DESC heapDesc = {};
-    heapDesc.SizeInBytes = blockSize;
-    heapDesc.Properties.Type = m_HeapType;
-    heapDesc.Alignment = HeapFlagsToAlignment(m_HeapFlags);
-    heapDesc.Flags = m_HeapFlags;
-
     ID3D12Heap* heap = NULL;
-    HRESULT hr = m_hAllocator->GetDevice()->CreateHeap(&heapDesc, IID_PPV_ARGS(&heap));
+    HRESULT hr = CreateD3d12Heap(heap, blockSize);
     if(FAILED(hr))
     {
         return hr;
     }
 
-    // New ID3D12Heap successfully created.
-
-    // Create new Allocation for it.
-    DeviceMemoryBlock* const pBlock = D3D12MA_NEW(m_hAllocator->GetAllocationCallbacks(), DeviceMemoryBlock)();
+    DeviceMemoryBlock* const pBlock = D3D12MA_NEW(m_hAllocator->GetAllocs(), DeviceMemoryBlock)();
     pBlock->Init(
         m_hAllocator,
         this,
@@ -3308,7 +3301,19 @@ HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
         *pNewBlockIndex = m_Blocks.size() - 1;
     }
 
-    return S_OK;
+    return hr;
+}
+
+HRESULT BlockVector::CreateD3d12Heap(ID3D12Heap*& outHeap, UINT64 size) const
+{
+    D3D12_HEAP_DESC heapDesc = {};
+    heapDesc.SizeInBytes = size;
+    heapDesc.Properties.Type = m_HeapType;
+    heapDesc.Alignment = HeapFlagsToAlignment(m_HeapFlags);
+    heapDesc.Flags = m_HeapFlags;
+
+    ID3D12Heap* heap = NULL;
+    return m_hAllocator->GetDevice()->CreateHeap(&heapDesc, IID_PPV_ARGS(&outHeap));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3328,7 +3333,7 @@ AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, 
 
     for(UINT heapTypeIndex = 0; heapTypeIndex < HEAP_TYPE_COUNT; ++heapTypeIndex)
     {
-        m_pDedicatedAllocations[heapTypeIndex] = D3D12MA_NEW(GetAllocationCallbacks(), AllocationVectorType)(GetAllocationCallbacks());
+        m_pDedicatedAllocations[heapTypeIndex] = D3D12MA_NEW(GetAllocs(), AllocationVectorType)(GetAllocs());
     }
 }
 
@@ -3347,7 +3352,7 @@ HRESULT AllocatorPimpl::Init()
         D3D12_HEAP_FLAGS heapFlags;
         CalcDefaultPoolParams(heapType, heapFlags, i);
 
-        m_BlockVectors[i] = D3D12MA_NEW(GetAllocationCallbacks(), BlockVector)(
+        m_BlockVectors[i] = D3D12MA_NEW(GetAllocs(), BlockVector)(
             this, // hAllocator
             NULL, // parentPool
             heapType, // heapType
@@ -3369,7 +3374,7 @@ AllocatorPimpl::~AllocatorPimpl()
 {
     for(UINT i = DEFAULT_POOL_MAX_COUNT; i--; )
     {
-        D3D12MA_DELETE(GetAllocationCallbacks(), m_BlockVectors[i]);
+        D3D12MA_DELETE(GetAllocs(), m_BlockVectors[i]);
     }
 
     for(UINT i = HEAP_TYPE_COUNT; i--; )
@@ -3379,7 +3384,7 @@ AllocatorPimpl::~AllocatorPimpl()
             D3D12MA_ASSERT(0 && "Unfreed dedicated allocations found.");
         }
 
-        D3D12MA_DELETE(GetAllocationCallbacks(), m_pDedicatedAllocations[i]);
+        D3D12MA_DELETE(GetAllocs(), m_pDedicatedAllocations[i]);
     }
 }
 
@@ -3645,7 +3650,7 @@ void Allocation::Release()
         break;
     }
 
-    D3D12MA_DELETE(m_Allocator->GetAllocationCallbacks(), this);
+    D3D12MA_DELETE(m_Allocator->GetAllocs(), this);
 }
 
 UINT64 Allocation::GetOffset()
@@ -3738,13 +3743,13 @@ Allocator::Allocator(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLO
 
 Allocator::~Allocator()
 {
-    D3D12MA_DELETE(m_Pimpl->GetAllocationCallbacks(), m_Pimpl);
+    D3D12MA_DELETE(m_Pimpl->GetAllocs(), m_Pimpl);
 }
 
 void Allocator::Release()
 {
     // Copy is needed because otherwise we would call destructor and invalidate the structure with callbacks before using it to free memory.
-    const ALLOCATION_CALLBACKS allocationCallbacksCopy = m_Pimpl->GetAllocationCallbacks();
+    const ALLOCATION_CALLBACKS allocationCallbacksCopy = m_Pimpl->GetAllocs();
     D3D12MA_DELETE(allocationCallbacksCopy, this);
 }
 
@@ -3771,14 +3776,14 @@ HRESULT Allocator::CreateResource(
 void Allocator::Test()
 {
 #if 0
-    Vector<size_t> v(m_Pimpl->GetAllocationCallbacks());
+    Vector<size_t> v(m_Pimpl->GetAllocs());
     for(size_t i = 0; i < 1000; ++i)
         v.push_back(i);
 #endif
 
 #if 0
-    PoolAllocator<size_t> poolAlloc{m_Pimpl->GetAllocationCallbacks(), 8};
-    Vector<size_t*> allocatedItems{m_Pimpl->GetAllocationCallbacks()};
+    PoolAllocator<size_t> poolAlloc{m_Pimpl->GetAllocs(), 8};
+    Vector<size_t*> allocatedItems{m_Pimpl->GetAllocs()};
     for(size_t i = 0; i < 1000; ++i)
     {
         size_t* const allocatedItem = poolAlloc.Alloc();
@@ -3796,7 +3801,7 @@ void Allocator::Test()
 
 #if 0
     struct FooStruct { int foo[10]; };
-    List<FooStruct> list(m_Pimpl->GetAllocationCallbacks());
+    List<FooStruct> list(m_Pimpl->GetAllocs());
     for(size_t i = 0; i < 1000; ++i)
     {
         list.PushBack();
