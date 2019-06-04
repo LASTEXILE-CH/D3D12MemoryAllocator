@@ -26,7 +26,7 @@
 extern CComPtr<ID3D12Device> g_Device;
 extern D3D12MA::Allocator* g_Allocator;
 
-struct D3D12MAAllocationDeleter
+struct AllocationDeleter
 {
     void operator()(D3D12MA::Allocation* obj) const
     {
@@ -37,9 +37,9 @@ struct D3D12MAAllocationDeleter
     }
 };
 
-typedef std::unique_ptr<D3D12MA::Allocation, D3D12MAAllocationDeleter> AllocationUniquePtr;
+typedef std::unique_ptr<D3D12MA::Allocation, AllocationDeleter> AllocationUniquePtr;
 
-struct ResourceInfo
+struct ResourceWithAllocation
 {
     CComPtr<ID3D12Resource> resource;
     AllocationUniquePtr allocation;
@@ -66,7 +66,7 @@ static void TestCommittedResources()
     wprintf(L"Test committed resources\n");
     
     const UINT count = 4;
-    ResourceInfo resources[count];
+    ResourceWithAllocation resources[count];
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
     allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
@@ -97,7 +97,7 @@ static void TestPlacedResources()
     wprintf(L"Test placed resources\n");
 
     const UINT count = 4;
-    ResourceInfo resources[count];
+    ResourceWithAllocation resources[count];
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
     allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
@@ -127,14 +127,14 @@ static void TestPlacedResources()
     {
         for(size_t j = i + 1; j < count; ++j)
         {
-            const ResourceInfo& resInfoI = resources[i];
-            const ResourceInfo& resInfoJ = resources[j];
-            if(resInfoI.allocation->GetHeap() != NULL &&
-                resInfoI.allocation->GetHeap() == resInfoJ.allocation->GetHeap())
+            const ResourceWithAllocation& resI = resources[i];
+            const ResourceWithAllocation& resJ = resources[j];
+            if(resI.allocation->GetHeap() != NULL &&
+                resI.allocation->GetHeap() == resJ.allocation->GetHeap())
             {
                 sameHeapFound = true;
-                CHECK_BOOL(resInfoI.allocation->GetOffset() + resInfoI.allocation->GetSize() <= resInfoJ.allocation->GetOffset() ||
-                    resInfoJ.allocation->GetOffset() + resInfoJ.allocation->GetSize() <= resInfoI.allocation->GetOffset());
+                CHECK_BOOL(resI.allocation->GetOffset() + resI.allocation->GetSize() <= resJ.allocation->GetOffset() ||
+                    resJ.allocation->GetOffset() + resJ.allocation->GetSize() <= resI.allocation->GetOffset());
             }
         }
     }
