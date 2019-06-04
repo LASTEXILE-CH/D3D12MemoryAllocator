@@ -1724,6 +1724,12 @@ public:
 private:
     friend class Allocator;
 
+    /*
+    Heuristics that decides whether a resource should better be placed in its own,
+    dedicated allocation (committed resource rather than placed resource).
+    */
+    static bool PrefersDedicatedAllocation(const D3D12_RESOURCE_DESC& resourceDesc);
+
     bool m_UseMutex;
     ID3D12Device* m_Device;
     UINT64 m_PreferredBlockSize;
@@ -3404,9 +3410,6 @@ HRESULT AllocatorPimpl::CreateResource(
         return E_INVALIDARG;
     }
 
-    const bool requiresDedicatedAllocation = false; // TODO
-    const bool prefersDedicatedAllocation = false; // TODO
-
     ALLOCATION_DESC finalAllocDesc = *pAllocDesc;
 
     *ppvResource = NULL;
@@ -3422,8 +3425,7 @@ HRESULT AllocatorPimpl::CreateResource(
     const UINT64 preferredBlockSize = blockVector->GetPreferredBlockSize();
     bool preferDedicatedMemory =
         D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY ||
-        requiresDedicatedAllocation ||
-        prefersDedicatedAllocation ||
+        PrefersDedicatedAllocation(*pResourceDesc) ||
         // Heuristics: Allocate dedicated memory if requested size if greater than half of preferred block size.
         resAllocInfo.SizeInBytes > preferredBlockSize / 2;
     if(preferDedicatedMemory &&
@@ -3484,6 +3486,12 @@ HRESULT AllocatorPimpl::CreateResource(
             riidResource,
             ppvResource);
     }
+}
+
+bool AllocatorPimpl::PrefersDedicatedAllocation(const D3D12_RESOURCE_DESC& resourceDesc)
+{
+    // Intentional. It may change in the future.
+    return false;
 }
 
 HRESULT AllocatorPimpl::AllocateDedicatedMemory(
