@@ -68,18 +68,18 @@ inline float ToFloatSeconds(duration d)
 }
 
 template <typename T>
-inline T CeilDiv(T x, T y)
+inline constexpr T CeilDiv(T x, T y)
 {
     return (x+y-1) / y;
 }
 template <typename T>
-inline T RoundDiv(T x, T y)
+inline constexpr T RoundDiv(T x, T y)
 {
     return (x+y/(T)2) / y;
 }
 
 template <typename T>
-static inline T AlignUp(T val, T align)
+inline constexpr T AlignUp(T val, T align)
 {
     return (val + align - 1) / align * align;
 }

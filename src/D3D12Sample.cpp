@@ -95,36 +95,28 @@ struct Vertex {
     }
 };
 
-struct ConstantBuffer
+struct ConstantBuffer0_PS
 {
     vec4 Color;
 };
-
-struct ConstantBufferPerObject
+struct ConstantBuffer1_VS
 {
     mat4 WorldViewProj;
 };
-size_t ConstantBufferPerObjectAlignedSize = AlignUp<size_t>(sizeof(ConstantBufferPerObject), 256);
-D3D12MA::Allocation* g_CbPerObjectUploadHeapAllocations[FRAME_BUFFER_COUNT];
-CComPtr<ID3D12Resource> g_CbPerObjectUploadHeaps[FRAME_BUFFER_COUNT];
-void* g_CbPerObjectAddress[FRAME_BUFFER_COUNT];
-mat4 cameraProjMat; // this will store our projection matrix
-mat4 cameraViewMat; // this will store our view matrix
-mat4 cube1WorldMat; // our first cubes world matrix (transformation matrix)
-mat4 cube1RotMat; // this will keep track of our rotation for the first cube
-vec4 cube1Position; // our first cubes position in space
-mat4 cube2WorldMat; // our first cubes world matrix (transformation matrix)
-mat4 cube2RotMat; // this will keep track of our rotation for the second cube
-vec4 cube2PositionOffset; // our second cube will rotate around the first cube, so this is the position offset from the first cube
-uint32_t numCubeIndices; // the number of indices to draw the cube
 
-CComPtr<ID3D12DescriptorHeap> g_MainDescriptorHeap[FRAME_BUFFER_COUNT];
-CComPtr<ID3D12Resource> g_ConstantBufferUploadHeap[FRAME_BUFFER_COUNT];
-D3D12MA::Allocation* g_ConstantBufferUploadAllocation[FRAME_BUFFER_COUNT];
-void* g_ConstantBufferAddress[FRAME_BUFFER_COUNT];
+static const size_t ConstantBufferPerObjectAlignedSize = AlignUp<size_t>(sizeof(ConstantBuffer1_VS), 256);
+static D3D12MA::Allocation* g_CbPerObjectUploadHeapAllocations[FRAME_BUFFER_COUNT];
+static CComPtr<ID3D12Resource> g_CbPerObjectUploadHeaps[FRAME_BUFFER_COUNT];
+static void* g_CbPerObjectAddress[FRAME_BUFFER_COUNT];
+static uint32_t g_CubeIndexCount;
 
-CComPtr<ID3D12Resource> g_Texture;
-D3D12MA::Allocation* g_TextureAllocation;
+static CComPtr<ID3D12DescriptorHeap> g_MainDescriptorHeap[FRAME_BUFFER_COUNT];
+static CComPtr<ID3D12Resource> g_ConstantBufferUploadHeap[FRAME_BUFFER_COUNT];
+static D3D12MA::Allocation* g_ConstantBufferUploadAllocation[FRAME_BUFFER_COUNT];
+static void* g_ConstantBufferAddress[FRAME_BUFFER_COUNT];
+
+static CComPtr<ID3D12Resource> g_Texture;
+static D3D12MA::Allocation* g_TextureAllocation;
 
 static void* const CUSTOM_ALLOCATION_USER_DATA = (void*)(uintptr_t)0xDEADC0DE;
 
@@ -664,7 +656,7 @@ void InitD3D() // initializes direct3d 12
 
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
         cbvDesc.BufferLocation = g_ConstantBufferUploadHeap[i]->GetGPUVirtualAddress();
-        cbvDesc.SizeInBytes = AlignUp<UINT>(sizeof(ConstantBuffer), 256);
+        cbvDesc.SizeInBytes = AlignUp<UINT>(sizeof(ConstantBuffer0_PS), 256);
         g_Device->CreateConstantBufferView(&cbvDesc, g_MainDescriptorHeap[i]->GetCPUDescriptorHandleForHeapStart());
 
         D3D12_RANGE readRange{0, 0};
@@ -870,7 +862,7 @@ void InitD3D() // initializes direct3d 12
         20, 23, 21, // second triangle
     };
 
-    numCubeIndices = (uint32_t)_countof(iList);
+    g_CubeIndexCount = (uint32_t)_countof(iList);
 
     size_t iBufferSize = sizeof(iList);
 
@@ -986,41 +978,6 @@ void InitD3D() // initializes direct3d 12
                                           // map the resource heap to get a gpu virtual address to the beginning of the heap
         CHECK_HR( g_CbPerObjectUploadHeaps[i]->Map(0, &readRange, &g_CbPerObjectAddress[i]) );
     }
-
-    // build projection and view matrix
-    cameraProjMat = mat4::Perspective(45.0f*(3.14f/180.0f), (float)SIZE_X / (float)SIZE_Y, 0.1f, 1000.0f);
-
-    // set starting camera state
-    vec3 cameraPosition; // this is our cameras position vector
-    vec3 cameraTarget; // a vector describing the point in space our camera is looking at
-    vec3 cameraUp; // the worlds up vector
-    cameraPosition = vec3(0.0f, 2.0f, -4.0f);
-    cameraTarget = vec3(0.0f, 0.0f, 0.0f);
-    cameraUp = vec3(0.0f, 1.0f, 0.0f);
-
-    // build view matrix
-    vec3 cPos = cameraPosition;
-    vec3 cTarg = cameraTarget;
-    vec3 cUp = cameraUp;
-    cameraViewMat = mat4::LookAt(cTarg, cPos, cUp);
-
-    // set starting cubes position
-    // first cube
-    cube1Position = vec4(0.0f, 0.0f, 0.0f, 0.0f); // set cube 1's position
-    vec4 posVec = cube1Position; // create xmvector for cube1's position
-
-    mat4 tmpMat = mat4::Translation(vec3(posVec.x, posVec.y, posVec.z)); // create translation matrix from cube1's position vector
-    cube1RotMat = mat4::Identity();
-    cube1WorldMat = tmpMat;
-
-                                             // second cube
-    cube2PositionOffset = vec4(1.2f, 0.0f, 0.0f, 0.0f);
-    posVec = cube2PositionOffset + cube1Position; // create xmvector for cube2's position
-                                                                                // we are rotating around cube1 here, so add cube2's position to cube1
-
-    tmpMat = mat4::Translation(vec3(posVec.x, posVec.y, posVec.z)); // create translation matrix from cube2's position offset vector
-    cube2RotMat = mat4::Identity(); // initialize cube2's rotation matrix to identity matrix
-    cube2WorldMat = tmpMat; // store cube2's world matrix
 
     // # TEXTURE
 
@@ -1164,76 +1121,38 @@ void Update()
 {
     {
         const float f = sin(g_Time * (PI * 2.f)) * 0.5f + 0.5f;
-        ConstantBuffer cb;
+        ConstantBuffer0_PS cb;
         cb.Color = vec4(f, f, f, 1.f);
         memcpy(g_ConstantBufferAddress[g_FrameIndex], &cb, sizeof(cb));
     }
 
     {
-        // update app logic, such as moving the camera or figuring out what objects are in view
-        ConstantBufferPerObject cb;
+        const mat4 projection = mat4::Perspective(
+            45.f * (PI / 180.f), // fovY
+            (float)SIZE_X / (float)SIZE_Y, // aspectRatio
+            0.1f, // zNear
+            1000.0f); // zFar
+        const mat4 view = mat4::LookAt(
+            vec3(0.f, 0.f, 0.f), // at
+            vec3(-.4f, 1.7f, -3.5f), // eye
+            vec3(0.f, 1.f, 0.f)); // up
+        const mat4 viewProjection = view * projection;
 
-        // create rotation matrices
-        mat4 rotXMat = mat4::RotationX(0.0001f);
-        mat4 rotYMat = mat4::RotationY(0.0002f);
-        mat4 rotZMat = mat4::RotationZ(0.0003f);
+        mat4 cube1World = mat4::RotationZ(g_Time);
 
-        // add rotation to cube1's rotation matrix and store it
-        mat4 rotMat = cube1RotMat * rotXMat * rotYMat * rotZMat;
-        cube1RotMat = rotMat;
-
-        // create translation matrix for cube 1 from cube 1's position vector
-        mat4 translationMat = mat4::Translation(vec3(cube1Position.x, cube1Position.y, cube1Position.z));
-
-        // create cube1's world matrix by first rotating the cube, then positioning the rotated cube
-        mat4 worldMat = rotMat * translationMat;
-
-        // store cube1's world matrix
-        cube1WorldMat = worldMat;
-
-        // update constant buffer for cube1
-        // create the wvp matrix and store in constant buffer
-        mat4 viewMat = cameraViewMat; // load view matrix
-        mat4 projMat = cameraProjMat; // load projection matrix
-        mat4 wvpMat = cube1WorldMat * viewMat * projMat; // create wvp matrix
-        mat4 transposed = wvpMat.Transposed(); // must transpose wvp matrix for the gpu
-        cb.WorldViewProj = transposed; // store transposed wvp matrix in constant buffer
-
-                                                        // copy our ConstantBuffer instance to the mapped constant buffer resource
+        ConstantBuffer1_VS cb;
+        mat4 worldViewProjection = cube1World * viewProjection;
+        cb.WorldViewProj = worldViewProjection.Transposed();
         memcpy(g_CbPerObjectAddress[g_FrameIndex], &cb, sizeof(cb));
 
-        // now do cube2's world matrix
-        // create rotation matrices for cube2
-        rotXMat = mat4::RotationX(0.0003f);
-        rotYMat = mat4::RotationY(0.0002f);
-        rotZMat = mat4::RotationZ(0.0001f);
+        mat4 cube2World = mat4::Scaling(0.5f) *
+            mat4::RotationX(g_Time * 2.0f) *
+            mat4::Translation(vec3(-1.2f, 0.f, 0.f)) *
+            cube1World;
 
-        // add rotation to cube2's rotation matrix and store it
-        rotMat = rotZMat * (cube2RotMat * (rotXMat * rotYMat));
-        cube2RotMat = rotMat;
-
-        // create translation matrix for cube 2 to offset it from cube 1 (its position relative to cube1
-        mat4 translationOffsetMat = mat4::Translation(vec3(cube2PositionOffset.x, cube2PositionOffset.y, cube2PositionOffset.z));
-
-        // we want cube 2 to be half the size of cube 1, so we scale it by .5 in all dimensions
-        mat4 scaleMat = mat4::Scaling(vec3(0.5f, 0.5f, 0.5f));
-
-        // reuse worldMat. 
-        // first we scale cube2. scaling happens relative to point 0,0,0, so you will almost always want to scale first
-        // then we translate it. 
-        // then we rotate it. rotation always rotates around point 0,0,0
-        // finally we move it to cube 1's position, which will cause it to rotate around cube 1
-        worldMat = scaleMat * translationOffsetMat * rotMat * translationMat;
-
-        wvpMat = cube2WorldMat * viewMat * projMat; // create wvp matrix
-        transposed = wvpMat.Transposed(); // must transpose wvp matrix for the gpu
-        cb.WorldViewProj = transposed; // store transposed wvp matrix in constant buffer
-
-                                                        // copy our ConstantBuffer instance to the mapped constant buffer resource
+        worldViewProjection = cube2World * viewProjection;
+        cb.WorldViewProj = worldViewProjection.Transposed();
         memcpy((char*)g_CbPerObjectAddress[g_FrameIndex] + ConstantBufferPerObjectAlignedSize, &cb, sizeof(cb));
-
-        // store cube2's world matrix
-        cube2WorldMat = worldMat;
     }
 }
 
@@ -1312,11 +1231,11 @@ void Render() // execute the command list
 
     g_CommandList->SetGraphicsRootConstantBufferView(1,
         g_CbPerObjectUploadHeaps[g_FrameIndex]->GetGPUVirtualAddress());
-    g_CommandList->DrawIndexedInstanced(numCubeIndices, 1, 0, 0, 0);
+    g_CommandList->DrawIndexedInstanced(g_CubeIndexCount, 1, 0, 0, 0);
 
     g_CommandList->SetGraphicsRootConstantBufferView(1,
         g_CbPerObjectUploadHeaps[g_FrameIndex]->GetGPUVirtualAddress() + ConstantBufferPerObjectAlignedSize);
-    g_CommandList->DrawIndexedInstanced(numCubeIndices, 1, 0, 0, 0);
+    g_CommandList->DrawIndexedInstanced(g_CubeIndexCount, 1, 0, 0, 0);
 
     // transition the "g_FrameIndex" render target from the render target state to the present state. If the debug layer is enabled, you will receive a
     // warning if present is called on the render target when it's not in the present state
