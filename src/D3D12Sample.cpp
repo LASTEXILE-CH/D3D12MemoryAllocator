@@ -392,7 +392,7 @@ void InitD3D() // initializes direct3d 12
 
     {
         D3D12MA::ALLOCATOR_DESC desc = {};
-        desc.Flags = 0;
+        desc.Flags = D3D12MA::ALLOCATOR_FLAG_NONE;
         desc.pDevice = device;
 
         D3D12MA::ALLOCATION_CALLBACKS allocationCallbacks = {};

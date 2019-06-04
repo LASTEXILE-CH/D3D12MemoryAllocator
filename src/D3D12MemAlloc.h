@@ -92,6 +92,9 @@ struct ALLOCATION_CALLBACKS
 /// \brief Bit flags to be used with ALLOCATION_DESC::Flags.
 typedef enum ALLOCATION_FLAGS
 {
+    /// Zero
+    ALLOCATION_FLAG_NONE = 0,
+
     /** \brief Set this flag if the allocation should have its own memory heap.
     
     Use it for special, big resources, like fullscreen textures used as render targets.
@@ -122,8 +125,8 @@ typedef enum ALLOCATION_FLAGS
 /// \brief Parameters of created Allocation object. To be used with Allocator::CreateResource.
 struct ALLOCATION_DESC
 {
-    /// Use #ALLOCATION_FLAGS.
-    UINT Flags;
+    /// Flags.
+    ALLOCATION_FLAGS Flags;
     /// The type of memory heap where the new allocation should be placed.
     D3D12_HEAP_TYPE HeapType;
 };
@@ -210,6 +213,9 @@ private:
 /// \brief Bit flags to be used with ALLOCATOR_DESC::Flags.
 typedef enum ALLOCATOR_FLAGS
 {
+    /// Zero
+    ALLOCATOR_FLAG_NONE = 0,
+
     /** \brief Allocator and all objects created from it will not be synchronized internally, so you must guarantee they are used from only one thread at a time or synchronized externally by you.
 
     Using this flag may increase performance because internal mutexes are not used.
@@ -220,8 +226,8 @@ typedef enum ALLOCATOR_FLAGS
 /// \brief Parameters of created Allocator object. To be used with CreateAllocator().
 struct ALLOCATOR_DESC
 {
-    /// Use #ALLOCATOR_FLAGS
-    UINT Flags;
+    /// Flags.
+    ALLOCATOR_FLAGS Flags;
     
     /// Direct3D device object that the allocator should be attached to.
     ID3D12Device* pDevice;

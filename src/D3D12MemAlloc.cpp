@@ -1675,7 +1675,7 @@ private:
         UINT currentFrameIndex,
         UINT64 size,
         UINT64 alignment,
-        UINT allocFlags,
+        ALLOCATION_FLAGS allocFlags,
         void* pUserData,
         UINT strategy,
         Allocation** pAllocation);
@@ -2754,7 +2754,7 @@ HRESULT BlockVector::AllocatePage(
     if(!canMakeOtherLost || canCreateNewBlock)
     {
         // 1. Search existing allocations. Try to allocate without making other allocations lost.
-        UINT allocFlagsCopy = createInfo.Flags;
+        ALLOCATION_FLAGS allocFlagsCopy = createInfo.Flags;
         //allocFlagsCopy &= ~VMA_ALLOCATION_CREATE_CAN_MAKE_OTHER_LOST_BIT;
 
         /*
@@ -3184,7 +3184,7 @@ HRESULT BlockVector::AllocateFromBlock(
     UINT currentFrameIndex,
     UINT64 size,
     UINT64 alignment,
-    UINT allocFlags,
+    ALLOCATION_FLAGS allocFlags,
     void* pUserData,
     UINT strategy,
     Allocation** pAllocation)
@@ -3410,22 +3410,15 @@ HRESULT AllocatorPimpl::CreateResource(
 
     if((finalAllocDesc.Flags & ALLOCATION_FLAG_DEDICATED_MEMORY) != 0)
     {
-        if((finalAllocDesc.Flags & ALLOCATION_FLAG_NEVER_ALLOCATE) != 0)
-        {
-            return E_OUTOFMEMORY;
-        }
-        else
-        {
-            return AllocateDedicatedMemory(
-                pAllocDesc,
-                pResourceDesc,
-                resAllocInfo,
-                InitialResourceState,
-                pOptimizedClearValue,
-                ppAllocation,
-                riidResource,
-                ppvResource);
-        }
+        return AllocateDedicatedMemory(
+            &finalAllocDesc,
+            pResourceDesc,
+            resAllocInfo,
+            InitialResourceState,
+            pOptimizedClearValue,
+            ppAllocation,
+            riidResource,
+            ppvResource);
     }
     else
     {
@@ -3457,35 +3450,15 @@ HRESULT AllocatorPimpl::CreateResource(
             }
         }
 
-        // Try dedicated memory.
-        if((finalAllocDesc.Flags & ALLOCATION_FLAG_NEVER_ALLOCATE) != 0)
-        {
-            return E_OUTOFMEMORY;
-        }
-        else
-        {
-            hr = AllocateDedicatedMemory(
-                pAllocDesc,
-                pResourceDesc,
-                resAllocInfo,
-                InitialResourceState,
-                pOptimizedClearValue,
-                ppAllocation,
-                riidResource,
-                ppvResource);
-            if(SUCCEEDED(hr))
-            {
-                // Succeeded: AllocateDedicatedMemory function already filld pMemory, nothing more to do here.
-                //VMA_DEBUG_LOG("    Allocated as DedicatedMemory");
-                return hr;
-            }
-            else
-            {
-                // Everything failed: Return error code.
-                //VMA_DEBUG_LOG("    vkAllocateMemory FAILED");
-                return hr;
-            }
-        }
+        return AllocateDedicatedMemory(
+            &finalAllocDesc,
+            pResourceDesc,
+            resAllocInfo,
+            InitialResourceState,
+            pOptimizedClearValue,
+            ppAllocation,
+            riidResource,
+            ppvResource);
     }
 }
 
@@ -3499,6 +3472,11 @@ HRESULT AllocatorPimpl::AllocateDedicatedMemory(
     REFIID riidResource,
     void** ppvResource)
 {
+    if((pAllocDesc->Flags & ALLOCATION_FLAG_NEVER_ALLOCATE) != 0)
+    {
+        return E_OUTOFMEMORY;
+    }
+
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = pAllocDesc->HeapType;
     HRESULT hr = m_Device->CreateCommittedResource(
