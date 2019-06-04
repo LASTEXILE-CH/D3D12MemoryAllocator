@@ -61,11 +61,39 @@ static void FillResourceDescForBuffer(D3D12_RESOURCE_DESC& outResourceDesc, UINT
     outResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 }
 
+static void FillData(void* outPtr, const UINT64 sizeInBytes, UINT seed)
+{
+    UINT* outValues = (UINT*)outPtr;
+    const UINT64 sizeInValues = sizeInBytes / sizeof(UINT);
+    UINT value = seed;
+    for(UINT i = 0; i < sizeInValues; ++i)
+    {
+        outValues[i] = value++;
+    }
+}
+
+static bool ValidateData(const void* ptr, const UINT64 sizeInBytes, UINT seed)
+{
+    const UINT* values = (const UINT*)ptr;
+    const UINT64 sizeInValues = sizeInBytes / sizeof(UINT);
+    UINT value = seed;
+    for(UINT i = 0; i < sizeInValues; ++i)
+    {
+        if(values[i] != value++)
+        {
+            //FAIL("ValidateData failed.");
+            return false;
+        }
+    }
+    return true;
+}
+
 static void TestCommittedResources()
 {
     wprintf(L"Test committed resources\n");
     
     const UINT count = 4;
+    const UINT64 bufSize = 32ull * 1024;
     ResourceWithAllocation resources[count];
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
@@ -73,9 +101,9 @@ static void TestCommittedResources()
     allocDesc.Flags = D3D12MA::ALLOCATION_FLAG_DEDICATED_MEMORY;
 
     D3D12_RESOURCE_DESC resourceDesc;
-    FillResourceDescForBuffer(resourceDesc, 32ull * 1024);
+    FillResourceDescForBuffer(resourceDesc, bufSize);
 
-    for(size_t i = 0; i < count; ++i)
+    for(UINT i = 0; i < count; ++i)
     {
         D3D12MA::Allocation* alloc = nullptr;
         CHECK_HR( g_Allocator->CreateResource(
@@ -97,15 +125,16 @@ static void TestPlacedResources()
     wprintf(L"Test placed resources\n");
 
     const UINT count = 4;
+    const UINT64 bufSize = 32ull * 1024;
     ResourceWithAllocation resources[count];
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
     allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
 
     D3D12_RESOURCE_DESC resourceDesc;
-    FillResourceDescForBuffer(resourceDesc, 32ull * 1024);
+    FillResourceDescForBuffer(resourceDesc, bufSize);
 
-    for(size_t i = 0; i < count; ++i)
+    for(UINT i = 0; i < count; ++i)
     {
         D3D12MA::Allocation* alloc = nullptr;
         CHECK_HR( g_Allocator->CreateResource(
@@ -141,10 +170,50 @@ static void TestPlacedResources()
     CHECK_BOOL(sameHeapFound);
 }
 
+static void TestMapping()
+{
+    wprintf(L"Test mapping\n");
+
+    const UINT count = 10;
+    const UINT64 bufSize = 32ull * 1024;
+    ResourceWithAllocation resources[count];
+
+    D3D12MA::ALLOCATION_DESC allocDesc = {};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
+
+    D3D12_RESOURCE_DESC resourceDesc;
+    FillResourceDescForBuffer(resourceDesc, bufSize);
+
+    for(UINT i = 0; i < count; ++i)
+    {
+        D3D12MA::Allocation* alloc = nullptr;
+        CHECK_HR( g_Allocator->CreateResource(
+            &allocDesc,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            NULL,
+            &alloc,
+            IID_PPV_ARGS(&resources[i].resource)) );
+        resources[i].allocation.reset(alloc);
+
+        void* mappedPtr = NULL;
+        CHECK_HR( resources[i].resource->Map(0, NULL, &mappedPtr) );
+
+        FillData(mappedPtr, bufSize, i);
+
+        // Unmap every other buffer.
+        if((i % 2) != 0)
+        {
+            resources[i].resource->Unmap(0, NULL);
+        }
+    }
+}
+
 static void TestGroupBasics()
 {
     TestCommittedResources();
     TestPlacedResources();
+    TestMapping();
 }
 
 void Test()
