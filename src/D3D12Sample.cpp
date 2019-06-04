@@ -38,6 +38,7 @@ const wchar_t * const WINDOW_TITLE = L"Direct3D 12 Memory Allocator Sample";
 const int SIZE_X = 1024;
 const int SIZE_Y = 576; 
 const bool FULLSCREEN = false;
+const UINT PRESENT_SYNC_INTERVAL = 1;
 const DXGI_FORMAT RENDER_TARGET_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 const DXGI_FORMAT DEPTH_STENCIL_FORMAT = DXGI_FORMAT_D32_FLOAT;
 const size_t FRAME_BUFFER_COUNT = 3; // number of buffers we want, 2 for double buffering, 3 for tripple buffering
@@ -50,9 +51,9 @@ const bool ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT = true;
 HINSTANCE g_Instance;
 HWND g_Wnd;
 
-uint64_t g_TimeOffset;
-uint64_t g_TimeValue;
-float g_Time;
+UINT64 g_TimeOffset; // In ms.
+UINT64 g_TimeValue; // Time since g_TimeOffset, in ms.
+float g_Time; // g_TimeValue converted to float, in seconds.
 float g_TimeDelta;
 
 CComPtr<ID3D12Device> g_Device; // direct3d g_Device
@@ -511,7 +512,7 @@ void InitD3D() // initializes direct3d 12
     CHECK_HR( g_Device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&g_DepthStencilDescriptorHeap)) );
 
     D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
-    depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    depthOptimizedClearValue.Format = DEPTH_STENCIL_FORMAT;
     depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
     depthOptimizedClearValue.DepthStencil.Stencil = 0;
 
@@ -540,7 +541,7 @@ void InitD3D() // initializes direct3d 12
     CHECK_HR( g_DepthStencilBuffer->SetName(L"Depth/Stencil Resource Heap") );
 
     D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
-    depthStencilDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    depthStencilDesc.Format = DEPTH_STENCIL_FORMAT;
     depthStencilDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     depthStencilDesc.Flags = D3D12_DSV_FLAG_NONE;
     g_Device->CreateDepthStencilView(g_DepthStencilBuffer, &depthStencilDesc, g_DepthStencilDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
@@ -1343,7 +1344,7 @@ void Render() // execute the command list
     CHECK_HR( g_CommandQueue->Signal(g_Fences[g_FrameIndex], g_FenceValues[g_FrameIndex]) );
 
     // present the current backbuffer
-    CHECK_HR( g_SwapChain->Present(0, 0) );
+    CHECK_HR( g_SwapChain->Present(PRESENT_SYNC_INTERVAL, 0) );
 }
 
 void Cleanup() // release com ojects and clean up memory
@@ -1489,10 +1490,10 @@ int main()
         }
         else
         {
-            uint64_t newTimeValue = GetTickCount64() - g_TimeOffset;
+            const UINT64 newTimeValue = GetTickCount64() - g_TimeOffset;
             g_TimeDelta = (float)(newTimeValue - g_TimeValue) * 0.001f;
-            g_Time = (float)newTimeValue * 0.001f;
             g_TimeValue = newTimeValue;
+            g_Time = (float)newTimeValue * 0.001f;
 
             Update();
             Render();
