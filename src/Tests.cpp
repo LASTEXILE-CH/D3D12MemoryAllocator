@@ -129,14 +129,14 @@ static void TestPlacedResources(const TestContext& ctx)
     ResourceWithAllocation resources[count];
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
-    allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
+    allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
 
     D3D12_RESOURCE_DESC resourceDesc;
     FillResourceDescForBuffer(resourceDesc, bufSize);
 
+    D3D12MA::Allocation* alloc = nullptr;
     for(UINT i = 0; i < count; ++i)
     {
-        D3D12MA::Allocation* alloc = nullptr;
         CHECK_HR( ctx.allocator->CreateResource(
             &allocDesc,
             &resourceDesc,
@@ -168,6 +168,52 @@ static void TestPlacedResources(const TestContext& ctx)
         }
     }
     CHECK_BOOL(sameHeapFound);
+
+    // Additionally create a texture to see if no error occurs due to bad handling of Resource Tier.
+    resourceDesc = {};
+    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resourceDesc.Alignment = 0;
+    resourceDesc.Width = 1024;
+    resourceDesc.Height = 1024;
+    resourceDesc.DepthOrArraySize = 1;
+    resourceDesc.MipLevels = 1;
+    resourceDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    resourceDesc.SampleDesc.Count = 1;
+    resourceDesc.SampleDesc.Quality = 0;
+    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    ResourceWithAllocation textureRes;
+    CHECK_HR( ctx.allocator->CreateResource(
+        &allocDesc,
+        &resourceDesc,
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        NULL,
+        &alloc,
+        IID_PPV_ARGS(&textureRes.resource)) );
+    textureRes.allocation.reset(alloc);
+
+    // Additionally create an MSAA render target to see if no error occurs due to bad handling of Resource Tier.
+    resourceDesc = {};
+    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resourceDesc.Alignment = 0;
+    resourceDesc.Width = 1920;
+    resourceDesc.Height = 1080;
+    resourceDesc.DepthOrArraySize = 1;
+    resourceDesc.MipLevels = 1;
+    resourceDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    resourceDesc.SampleDesc.Count = 2;
+    resourceDesc.SampleDesc.Quality = 0;
+    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    ResourceWithAllocation renderTargetRes;
+    CHECK_HR( ctx.allocator->CreateResource(
+        &allocDesc,
+        &resourceDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        NULL,
+        &alloc,
+        IID_PPV_ARGS(&renderTargetRes.resource)) );
+    renderTargetRes.allocation.reset(alloc);
 }
 
 static void TestMapping(const TestContext& ctx)

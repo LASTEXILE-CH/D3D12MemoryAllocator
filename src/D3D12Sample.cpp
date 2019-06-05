@@ -401,6 +401,18 @@ void InitD3D() // initializes direct3d 12
 
         CHECK_HR( D3D12MA::CreateAllocator(&desc, &g_Allocator) );
         g_Allocator->Test();
+
+        switch(g_Allocator->GetD3D12Options().ResourceHeapTier)
+        {
+        case D3D12_RESOURCE_HEAP_TIER_1:
+            wprintf(L"ResourceHeapTier = D3D12_RESOURCE_HEAP_TIER_1\n");
+            break;
+        case D3D12_RESOURCE_HEAP_TIER_2:
+            wprintf(L"ResourceHeapTier = D3D12_RESOURCE_HEAP_TIER_2\n");
+            break;
+        default:
+            assert(0);
+        }
     }
 
     // -- Create the Command Queue -- //
