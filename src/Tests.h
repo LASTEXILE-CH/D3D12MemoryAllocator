@@ -22,4 +22,12 @@
 
 #pragma once
 
-void Test();
+#include "D3D12MemAlloc.h"
+
+struct TestContext
+{
+    ID3D12Device* device;
+    D3D12MA::Allocator* allocator;
+};
+
+void Test(const TestContext& ctx);

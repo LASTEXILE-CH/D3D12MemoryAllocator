@@ -57,8 +57,8 @@ static UINT64 g_TimeValue; // Time since g_TimeOffset, in ms.
 static float g_Time; // g_TimeValue converted to float, in seconds.
 static float g_TimeDelta;
 
-CComPtr<ID3D12Device> g_Device;
-D3D12MA::Allocator* g_Allocator;
+static CComPtr<ID3D12Device> g_Device;
+static D3D12MA::Allocator* g_Allocator;
 
 static CComPtr<IDXGISwapChain3> g_SwapChain; // swapchain used to switch between render targets
 static CComPtr<ID3D12CommandQueue> g_CommandQueue; // container for command lists
@@ -1328,19 +1328,27 @@ void Cleanup() // release com ojects and clean up memory
     g_SwapChain.Release();
 }
 
+static void ExecuteTests()
+{
+    try
+    {
+        TestContext ctx = {};
+        ctx.device = g_Device;
+        ctx.allocator = g_Allocator;
+        Test(ctx);
+    }
+    catch(const std::exception& ex)
+    {
+        wprintf(L"ERROR: %hs\n", ex.what());
+    }
+}
+
 static void OnKeyDown(WPARAM key)
 {
     switch (key)
     {
     case 'T':
-        try
-        {
-            Test();
-        }
-        catch(const std::exception& ex)
-        {
-            wprintf(L"ERROR: %hs\n", ex.what());
-        }
+        ExecuteTests();
         break;
 
     case VK_ESCAPE:
@@ -1370,6 +1378,23 @@ static LRESULT WINAPI WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     return DefWindowProc(wnd, msg, wParam, lParam);
+}
+
+ID3D12GraphicsCommandList* BeginCommandList()
+{
+    CHECK_HR( g_CommandList->Reset(g_CommandAllocators[g_FrameIndex], NULL) );
+
+    return g_CommandList;
+}
+
+void EndCommandList(ID3D12GraphicsCommandList* cmdList)
+{
+    cmdList->Close();
+
+    ID3D12CommandList* genericCmdList = cmdList;
+    g_CommandQueue->ExecuteCommandLists(1, &genericCmdList);
+
+    WaitGPUIdle(g_FrameIndex);
 }
 
 int main()

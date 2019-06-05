@@ -20,11 +20,11 @@
 // THE SOFTWARE.
 //
 
-#include "D3D12MemAlloc.h"
+#include "Tests.h"
 #include "Common.h"
 
-extern CComPtr<ID3D12Device> g_Device;
-extern D3D12MA::Allocator* g_Allocator;
+extern ID3D12GraphicsCommandList* BeginCommandList();
+extern void EndCommandList(ID3D12GraphicsCommandList* cmdList);
 
 struct AllocationDeleter
 {
@@ -88,7 +88,7 @@ static bool ValidateData(const void* ptr, const UINT64 sizeInBytes, UINT seed)
     return true;
 }
 
-static void TestCommittedResources()
+static void TestCommittedResources(const TestContext& ctx)
 {
     wprintf(L"Test committed resources\n");
     
@@ -106,7 +106,7 @@ static void TestCommittedResources()
     for(UINT i = 0; i < count; ++i)
     {
         D3D12MA::Allocation* alloc = nullptr;
-        CHECK_HR( g_Allocator->CreateResource(
+        CHECK_HR( ctx.allocator->CreateResource(
             &allocDesc,
             &resourceDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ,
@@ -120,7 +120,7 @@ static void TestCommittedResources()
     }
 }
 
-static void TestPlacedResources()
+static void TestPlacedResources(const TestContext& ctx)
 {
     wprintf(L"Test placed resources\n");
 
@@ -137,7 +137,7 @@ static void TestPlacedResources()
     for(UINT i = 0; i < count; ++i)
     {
         D3D12MA::Allocation* alloc = nullptr;
-        CHECK_HR( g_Allocator->CreateResource(
+        CHECK_HR( ctx.allocator->CreateResource(
             &allocDesc,
             &resourceDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ,
@@ -170,7 +170,7 @@ static void TestPlacedResources()
     CHECK_BOOL(sameHeapFound);
 }
 
-static void TestMapping()
+static void TestMapping(const TestContext& ctx)
 {
     wprintf(L"Test mapping\n");
 
@@ -187,7 +187,7 @@ static void TestMapping()
     for(UINT i = 0; i < count; ++i)
     {
         D3D12MA::Allocation* alloc = nullptr;
-        CHECK_HR( g_Allocator->CreateResource(
+        CHECK_HR( ctx.allocator->CreateResource(
             &allocDesc,
             &resourceDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ,
@@ -201,7 +201,7 @@ static void TestMapping()
 
         FillData(mappedPtr, bufSize, i);
 
-        // Unmap every other buffer.
+        // Unmap every other buffer. Leave others mapped.
         if((i % 2) != 0)
         {
             resources[i].resource->Unmap(0, NULL);
@@ -209,18 +209,127 @@ static void TestMapping()
     }
 }
 
-static void TestGroupBasics()
+static void TestTransfer(const TestContext& ctx)
 {
-    TestCommittedResources();
-    TestPlacedResources();
-    TestMapping();
+    wprintf(L"Test mapping\n");
+
+    const UINT count = 10;
+    const UINT64 bufSize = 32ull * 1024;
+    
+    ResourceWithAllocation resourcesUpload[count];
+    ResourceWithAllocation resourcesDefault[count];
+    ResourceWithAllocation resourcesReadback[count];
+
+    D3D12MA::ALLOCATION_DESC allocDescUpload = {};
+    allocDescUpload.HeapType = D3D12_HEAP_TYPE_UPLOAD;
+    D3D12MA::ALLOCATION_DESC allocDescDefault = {};
+    allocDescDefault.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12MA::ALLOCATION_DESC allocDescReadback = {};
+    allocDescReadback.HeapType = D3D12_HEAP_TYPE_READBACK;
+
+    D3D12_RESOURCE_DESC resourceDesc;
+    FillResourceDescForBuffer(resourceDesc, bufSize);
+
+    // Create 3 sets of resources.
+    for(UINT i = 0; i < count; ++i)
+    {
+        D3D12MA::Allocation* alloc = nullptr;
+        CHECK_HR( ctx.allocator->CreateResource(
+            &allocDescUpload,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            NULL,
+            &alloc,
+            IID_PPV_ARGS(&resourcesUpload[i].resource)) );
+        resourcesUpload[i].allocation.reset(alloc);
+
+        CHECK_HR( ctx.allocator->CreateResource(
+            &allocDescDefault,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            NULL,
+            &alloc,
+            IID_PPV_ARGS(&resourcesDefault[i].resource)) );
+        resourcesDefault[i].allocation.reset(alloc);
+
+        CHECK_HR( ctx.allocator->CreateResource(
+            &allocDescReadback,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            NULL,
+            &alloc,
+            IID_PPV_ARGS(&resourcesReadback[i].resource)) );
+        resourcesReadback[i].allocation.reset(alloc);
+    }
+
+    // Map and fill data in UPLOAD.
+    for(UINT i = 0; i < count; ++i)
+    {
+        void* mappedPtr = nullptr;
+        CHECK_HR( resourcesUpload[i].resource->Map(0, NULL, &mappedPtr) );
+
+        FillData(mappedPtr, bufSize, i);
+
+        // Unmap every other resource, leave others mapped.
+        if((i % 2) != 0)
+        {
+            resourcesUpload[i].resource->Unmap(0, NULL);
+        }
+    }
+
+    // Transfer from UPLOAD to DEFAULT, from there to READBACK.
+    ID3D12GraphicsCommandList* cmdList = BeginCommandList();
+    for(UINT i = 0; i < count; ++i)
+    {
+        cmdList->CopyBufferRegion(resourcesDefault[i].resource, 0, resourcesUpload[i].resource, 0, bufSize);
+    }
+    D3D12_RESOURCE_BARRIER barriers[count] = {};
+    for(UINT i = 0; i < count; ++i)
+    {
+        barriers[i].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barriers[i].Transition.pResource = resourcesDefault[i].resource;
+        barriers[i].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        barriers[i].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        barriers[i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    }
+    cmdList->ResourceBarrier(count, barriers);
+    for(UINT i = 0; i < count; ++i)
+    {
+        cmdList->CopyBufferRegion(resourcesReadback[i].resource, 0, resourcesDefault[i].resource, 0, bufSize);
+    }
+    EndCommandList(cmdList);
+
+    // Validate READBACK buffers.
+    for(UINT i = count; i--; )
+    {
+        const D3D12_RANGE mapRange = {0, bufSize};
+        void* mappedPtr = nullptr;
+        CHECK_HR( resourcesReadback[i].resource->Map(0, &mapRange, &mappedPtr) );
+
+        CHECK_BOOL( ValidateData(mappedPtr, bufSize, i) );
+
+        // Unmap every 3rd resource, leave others mapped.
+        if((i % 3) != 0)
+        {
+            const D3D12_RANGE writtenRange = {0, 0};
+            resourcesReadback[i].resource->Unmap(0, &writtenRange);
+        }
+    }
 }
 
-void Test()
+static void TestGroupBasics(const TestContext& ctx)
+{
+    TestCommittedResources(ctx);
+    TestPlacedResources(ctx);
+    TestMapping(ctx);
+    TestTransfer(ctx);
+}
+
+void Test(const TestContext& ctx)
 {
     wprintf(L"TESTS BEGIN\n");
 
-    TestGroupBasics();
+    TestGroupBasics(ctx);
 
     wprintf(L"TESTS END\n");
 }
