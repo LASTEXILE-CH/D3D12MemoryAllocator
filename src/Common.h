@@ -332,6 +332,7 @@ public:
     RandomNumberGenerator(uint32_t seed) : m_Value{seed} { }
     void Seed(uint32_t seed) { m_Value = seed; }
     uint32_t Generate() { return GenerateFast() ^ (GenerateFast() >> 7); }
+    bool GenerateBool() { return (GenerateFast() & 0x4) != 0; }
 
 private:
     uint32_t m_Value;

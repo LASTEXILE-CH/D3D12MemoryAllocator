@@ -22,6 +22,7 @@
 
 #include "Tests.h"
 #include "Common.h"
+#include <thread>
 
 extern ID3D12GraphicsCommandList* BeginCommandList();
 extern void EndCommandList(ID3D12GraphicsCommandList* cmdList);
@@ -43,6 +44,8 @@ struct ResourceWithAllocation
 {
     CComPtr<ID3D12Resource> resource;
     AllocationUniquePtr allocation;
+    UINT64 size = UINT64_MAX;
+    UINT dataSeed = 0;
 };
 
 static void FillResourceDescForBuffer(D3D12_RESOURCE_DESC& outResourceDesc, UINT64 size)
@@ -363,12 +366,146 @@ static void TestTransfer(const TestContext& ctx)
     }
 }
 
+static void TestMultithreading(const TestContext& ctx)
+{
+    wprintf(L"Test multithreading\n");
+
+    const UINT threadCount = 32;
+    const UINT bufSizeMin = 1024ull;
+    const UINT bufSizeMax = 1024ull * 1024;
+
+    D3D12MA::ALLOCATION_DESC allocDesc = {};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
+
+    // Launch threads.
+    std::thread threads[threadCount];
+    for(UINT threadIndex = 0; threadIndex < threadCount; ++threadIndex)
+    {
+        auto threadFunc = [&, threadIndex]()
+        {
+            RandomNumberGenerator rand(threadIndex);
+
+            std::vector<ResourceWithAllocation> resources;
+            resources.reserve(256);
+
+            // Create starting number of buffers.
+            const UINT bufToCreateCount = 64;
+            for(UINT bufIndex = 0; bufIndex < bufToCreateCount; ++bufIndex)
+            {
+                ResourceWithAllocation res = {};
+                res.dataSeed = (threadIndex << 16) | bufIndex;
+                res.size = AlignUp<UINT>(rand.Generate() % (bufSizeMax - bufSizeMin) + bufSizeMin, 16);
+
+                D3D12_RESOURCE_DESC resourceDesc;
+                FillResourceDescForBuffer(resourceDesc, res.size);
+
+                D3D12MA::Allocation* alloc = nullptr;
+                CHECK_HR( ctx.allocator->CreateResource(
+                    &allocDesc,
+                    &resourceDesc,
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    NULL,
+                    &alloc,
+                    IID_PPV_ARGS(&res.resource)) );
+                res.allocation.reset(alloc);
+                
+                void* mappedPtr = nullptr;
+                CHECK_HR( res.resource->Map(0, NULL, &mappedPtr) );
+
+                FillData(mappedPtr, res.size, res.dataSeed);
+
+                // Unmap some of them, leave others mapped.
+                if(rand.GenerateBool())
+                {
+                    res.resource->Unmap(0, NULL);
+                }
+
+                resources.push_back(std::move(res));
+            }
+            
+            Sleep(20);
+
+            // Make a number of random allocate and free operations.
+            const UINT operationCount = 128;
+            for(UINT operationIndex = 0; operationIndex < operationCount; ++operationIndex)
+            {
+                const bool removePossible = !resources.empty();
+                const bool remove = removePossible && rand.GenerateBool();
+                if(remove)
+                {
+                    const UINT indexToRemove = rand.Generate() % resources.size();
+                    resources.erase(resources.begin() + indexToRemove);
+                }
+                else // Create new buffer.
+                {
+                    ResourceWithAllocation res = {};
+                    res.dataSeed = (threadIndex << 16) | operationIndex;
+                    res.size = AlignUp<UINT>(rand.Generate() % (bufSizeMax - bufSizeMin) + bufSizeMin, 16);
+                    D3D12_RESOURCE_DESC resourceDesc;
+                    FillResourceDescForBuffer(resourceDesc, res.size);
+
+                    D3D12MA::Allocation* alloc = nullptr;
+                    CHECK_HR( ctx.allocator->CreateResource(
+                        &allocDesc,
+                        &resourceDesc,
+                        D3D12_RESOURCE_STATE_GENERIC_READ,
+                        NULL,
+                        &alloc,
+                        IID_PPV_ARGS(&res.resource)) );
+                    res.allocation.reset(alloc);
+
+                    void* mappedPtr = nullptr;
+                    CHECK_HR( res.resource->Map(0, NULL, &mappedPtr) );
+
+                    FillData(mappedPtr, res.size, res.dataSeed);
+
+                    // Unmap some of them, leave others mapped.
+                    if(rand.GenerateBool())
+                    {
+                        res.resource->Unmap(0, NULL);
+                    }
+
+                    resources.push_back(std::move(res));
+                }
+            }
+
+            Sleep(20);
+
+            // Validate data in all remaining buffers while deleting them.
+            for(size_t resIndex = resources.size(); resIndex--; )
+            {
+                void* mappedPtr = nullptr;
+                CHECK_HR( resources[resIndex].resource->Map(0, NULL, &mappedPtr) );
+
+                ValidateData(mappedPtr, resources[resIndex].size, resources[resIndex].dataSeed);
+
+                // Unmap some of them, leave others mapped.
+                if((resIndex % 3) == 1)
+                {
+                    D3D12_RANGE writtenRange = {0, 0};
+                    resources[resIndex].resource->Unmap(0, &writtenRange);
+                } 
+
+                resources.pop_back();
+            }
+        };
+        threads[threadIndex] = std::thread(threadFunc);
+    }
+
+    // Wait for threads to finish.
+    for(UINT threadIndex = threadCount; threadIndex--; )
+    {
+        threads[threadIndex].join();
+    }
+}
+
 static void TestGroupBasics(const TestContext& ctx)
 {
     TestCommittedResources(ctx);
     TestPlacedResources(ctx);
     TestMapping(ctx);
     TestTransfer(ctx);
+    TestMultithreading(ctx);
 }
 
 void Test(const TestContext& ctx)
