@@ -36,6 +36,7 @@ Documentation of all members: D3D12MemAlloc.h
 - <b>User guide</b>
     - \subpage quick_start
         - [Project setup](@ref quick_start_project_setup)
+        - [Creating resources](@ref quick_start_creating_resources)
 
 \section main_see_also See also
 
@@ -45,9 +46,114 @@ Documentation of all members: D3D12MemAlloc.h
 
 \page quick_start Quick start
 
-\section quick_start_project_setup Project setup
+\section quick_start_project_setup Project setup and initialization
 
-Project setup goes here TODO...
+This is a small, standalone C++ library. It consists of a pair of 2 files:
+`%D3D12MemAlloc.h` header file with public interface and `D3D12MemAlloc.cpp` with
+internal implementation. The only external dependencies are WinAPI, Direct3D 12,
+and parts of C/C++ standard library (but STL containers, exceptions, or RTTI are
+not used).
+
+The library is developed and tested using Microsoft Visual Studio 2019, but it
+should work with other compilers as well. It is designed for 64-bit code.
+
+To use the library in your project:
+
+(1.) Copy files `D3D12MemAlloc.cpp`, `%D3D12MemAlloc.h` to your project.
+
+(2.) Make `D3D12MemAlloc.cpp` compiling as part of the project, as C++ code.
+
+(3.) Include library header in each CPP file that needs to use the library.
+
+\code
+#include "D3D12MemAlloc.h"
+\endcode
+
+(4.) Right after you created `ID3D12Device`, fill D3D12MA::ALLOCATOR_DESC
+structure and call function D3D12MA::CreateAllocator to create the main
+D3D12MA::Allocator object.
+
+Please note that all symbols of the library are declared inside `D3D12MA` namespace.
+
+\code
+ID3D12Device* device = (...)
+
+D3D12MA::ALLOCATOR_DESC allocatorDesc = {};
+allocatorDesc.pDevice = device;
+
+D3D12MA::Allocator* allocator;
+HRESULT hr = D3D12MA::CreateAllocator(&allocatorDesc, &allocator);
+\endcode
+
+(5.) Right before destroying the D3D12 device, destroy the allocator object.
+
+Please note that objects of this library must be destroyed by calling `Release`
+method (despite they are not COM interfaces and no reference counting is involved).
+
+\code
+allocator->Release();
+device->Release();
+\endcode
+
+
+\section quick_start_creating_resources Creating resources
+
+To use the library for creating resources (textures and buffers), call method
+D3D12MA::Allocator::CreateResource in the place where you would previously call
+`ID3D12Device::CreateCommittedResource`.
+
+The function has similar syntax, but it expect structure D3D12MA::ALLOCATION_DESC
+to be passed along with `D3D12_RESOURCE_DESC` and other parameters for created
+resource. This structure describes parameters of the desired memory allocation,
+including choice of `D3D12_HEAP_TYPE`.
+
+The function also returns a new object of type D3D12MA::Allocation, created along
+with usual `ID3D12Resource`. It represents allocated memory and can be queried
+for size, offset, and `ID3D12Heap` if needed.
+
+\code
+D3D12_RESOURCE_DESC resourceDesc = {};
+resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+resourceDesc.Alignment = 0;
+resourceDesc.Width = 1024;
+resourceDesc.Height = 1024;
+resourceDesc.DepthOrArraySize = 1;
+resourceDesc.MipLevels = 1;
+resourceDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+resourceDesc.SampleDesc.Count = 1;
+resourceDesc.SampleDesc.Quality = 0;
+resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+allocation::ALLOCATION_DESC allocationDesc = {};
+allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+
+D3D12Resource* resource;
+D3D12MA::Allocation* allocation;
+HRESULT hr = allocator->CreateResource(
+    &allocationDesc,
+    &resourceDesc,
+    D3D12_RESOURCE_STATE_COPY_DEST,
+    NULL,
+    &allocation,
+    IID_PPV_ARGS(&resource));
+\endcode
+
+You need to remember both resource and allocation objects and destroy them
+separately when no longer needed.
+
+\code
+allocation->Release();
+resource->Release();
+\endcode
+
+The advantage of using the allocator instead of creating committed resource, and
+the main purpose of this library, is that it can decide to allocate bigger memory
+heap internally using `ID3D12Device::CreateHeap` and place multiple resources in
+it, at different offsets, using `ID3D12Device::CreatePlacedResource`. The library
+manages its own collection of allocated memory blocks (heaps) and remembers which
+parts of them are occupied and which parts are free to be used for new resources.
+
 */
 
 #include <d3d12.h>
