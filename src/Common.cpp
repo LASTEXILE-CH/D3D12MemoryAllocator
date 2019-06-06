@@ -22,7 +22,7 @@
 
 #include "Common.h"
 
-void ReadFile(std::vector<char>& out, const char* fileName)
+void ReadFile(std::vector<char>& out, const wchar_t* fileName)
 {
     std::ifstream file(fileName, std::ios::ate | std::ios::binary);
     assert(file.is_open());
@@ -35,6 +35,19 @@ void ReadFile(std::vector<char>& out, const char* fileName)
     }
     else
         out.clear();
+}
+
+void SaveFile(const wchar_t* filePath, const void* data, size_t dataSize)
+{
+    FILE* f = nullptr;
+    _wfopen_s(&f, filePath, L"wb");
+    if(f)
+    {
+        fwrite(data, 1, dataSize, f);
+        fclose(f);
+    }
+    else
+        assert(0);
 }
 
 void SetConsoleColor(CONSOLE_COLOR color)
@@ -160,17 +173,4 @@ void PrintErrorF(const wchar_t* format, ...)
 	va_start(argList, format);
 	PrintMessageV(CONSOLE_COLOR::WARNING, format, argList);
 	va_end(argList);
-}
-
-void SaveFile(const wchar_t* filePath, const void* data, size_t dataSize)
-{
-    FILE* f = nullptr;
-    _wfopen_s(&f, filePath, L"wb");
-    if(f)
-    {
-        fwrite(data, 1, dataSize, f);
-        fclose(f);
-    }
-    else
-        assert(0);
 }

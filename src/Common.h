@@ -62,11 +62,6 @@ typedef std::chrono::high_resolution_clock::duration duration;
 #define CHECK_BOOL(expr)  do { if(!(expr)) FAIL(__FILE__ "(" LINE_STRING "): !( " #expr " )"); } while(false)
 #define CHECK_HR(expr)  do { if(FAILED(expr)) FAIL(__FILE__ "(" LINE_STRING "): FAILED( " #expr " )"); } while(false)
 
-inline float ToFloatSeconds(duration d)
-{
-    return std::chrono::duration_cast<std::chrono::duration<float>>(d).count();
-}
-
 template <typename T>
 inline constexpr T CeilDiv(T x, T y)
 {
@@ -350,7 +345,8 @@ private:
     RandomNumberGenerator& m_Gen;
 };
 
-void ReadFile(std::vector<char>& out, const char* fileName);
+void ReadFile(std::vector<char>& out, const wchar_t* fileName);
+void SaveFile(const wchar_t* filePath, const void* data, size_t dataSize);
 
 enum class CONSOLE_COLOR
 {
@@ -382,4 +378,3 @@ void PrintWarningF(const wchar_t* format, ...);
 void PrintErrorF(const char* format, ...);
 void PrintErrorF(const wchar_t* format, ...);
 
-void SaveFile(const wchar_t* filePath, const void* data, size_t dataSize);

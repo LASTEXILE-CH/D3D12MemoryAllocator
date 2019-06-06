@@ -400,7 +400,6 @@ void InitD3D() // initializes direct3d 12
         }
 
         CHECK_HR( D3D12MA::CreateAllocator(&desc, &g_Allocator) );
-        g_Allocator->Test();
 
         switch(g_Allocator->GetD3D12Options().ResourceHeapTier)
         {

@@ -53,16 +53,18 @@ Project setup goes here TODO...
 #include <d3d12.h>
 
 /// \cond INTERNAL
+
 #define D3D12MA_CLASS_NO_COPY(className) \
     private: \
         className(const className&) = delete; \
         className(className&&) = delete; \
         className& operator=(const className&) = delete; \
         className& operator=(className&&) = delete;
-#define FACILITY_D3D12MA 3542
-/// \endcond
 
-#define D3D12MA_E_VALIDATION_FAILED   MAKE_HRESULT(SEVERITY_ERROR, FACILITY_D3D12MA, 1)
+// To be used with MAKE_HRESULT to define custom error codes.
+#define FACILITY_D3D12MA 3542
+
+/// \endcond
 
 namespace D3D12MA
 {
@@ -170,7 +172,6 @@ private:
     template<typename T> friend void D3D12MA_DELETE(const ALLOCATION_CALLBACKS&, T*);
 
     AllocatorPimpl* m_Allocator;
-    
     enum Type
     {
         TYPE_COMMITTED,
@@ -189,7 +190,6 @@ private:
         struct
         {
             UINT64 offset;
-            UINT64 alignment;
             DeviceMemoryBlock* block;
         } m_Placed;
     };
@@ -278,10 +278,6 @@ public:
         Allocation** ppAllocation,
         REFIID riidResource,
         void** ppvResource);
-
-    /// \cond INTERNAL
-    void Test();
-    /// \endcond
 
 private:
     friend HRESULT CreateAllocator(const ALLOCATOR_DESC*, Allocator**);
