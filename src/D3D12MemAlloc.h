@@ -22,7 +22,7 @@
 
 #pragma once
 
-/** \mainpage Direct3D 12 Memory Allocator
+/** \mainpage D3D12 Memory Allocator
 
 <b>Version 0.0.1-development</b> (2019-05-23)
 

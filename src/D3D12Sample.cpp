@@ -35,7 +35,7 @@ namespace PS
 }
 
 static const wchar_t * const CLASS_NAME = L"D3D12MemAllocSample";
-static const wchar_t * const WINDOW_TITLE = L"Direct3D 12 Memory Allocator Sample";
+static const wchar_t * const WINDOW_TITLE = L"D3D12 Memory Allocator Sample";
 static const int SIZE_X = 1024;
 static const int SIZE_Y = 576; 
 static const bool FULLSCREEN = false;
@@ -47,7 +47,7 @@ static const D3D_FEATURE_LEVEL MY_D3D_FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
 
 static const bool ENABLE_DEBUG_LAYER = true;
 static const bool ENABLE_CPU_ALLOCATION_CALLBACKS = true;
-static const bool ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT = true;
+static const bool ENABLE_CPU_ALLOCATION_CALLBACKS_PRINT = false;
 
 static HINSTANCE g_Instance;
 static HWND g_Wnd;

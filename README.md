@@ -1,8 +1,8 @@
-# Direct3D 12 Memory Allocator
+# D3D12 Memory Allocator
 
-Easy to integrate Direct3D 12 memory allocation library.
+Easy to integrate memory allocation library for Direct3D 12.
 
-**Documentation:** See [Direct3D 12 Memory Allocator](https://gpuopen-librariesandsdks.github.io/Direct3D12MemoryAllocator/html/) (generated from Doxygen-style comments in [src/D3D12MemAlloc.h](src/D3D12MemAlloc.h))
+**Documentation:** See [D3D12 Memory Allocator](https://gpuopen-librariesandsdks.github.io/D3D12MemoryAllocator/html/) (generated from Doxygen-style comments in [src/D3D12MemAlloc.h](src/D3D12MemAlloc.h))
 
 **License:** MIT. See [LICENSE.txt](LICENSE.txt)
 
@@ -46,7 +46,7 @@ TODO
 
 # Read more
 
-See **[Documentation](https://gpuopen-librariesandsdks.github.io/Direct3D12MemoryAllocator/html/)**. (TODO...)
+See **[Documentation](https://gpuopen-librariesandsdks.github.io/D3D12MemoryAllocator/html/)**. (TODO...)
 
 # Software using this library
 
