@@ -37,7 +37,8 @@ Documentation of all members: D3D12MemAlloc.h
     - \subpage quick_start
         - [Project setup](@ref quick_start_project_setup)
         - [Creating resources](@ref quick_start_creating_resources)
-
+        - [Mapping memory](@ref quick_start_mapping_memory)
+		
 \section main_see_also See also
 
 - [Product page on GPUOpen](https://gpuopen.com/gaming-product/d3d12-memory-allocator/) (TODO)
@@ -73,7 +74,7 @@ To use the library in your project:
 structure and call function D3D12MA::CreateAllocator to create the main
 D3D12MA::Allocator object.
 
-Please note that all symbols of the library are declared inside `D3D12MA` namespace.
+Please note that all symbols of the library are declared inside #D3D12MA namespace.
 
 \code
 ID3D12Device* device = (...)
@@ -102,7 +103,7 @@ To use the library for creating resources (textures and buffers), call method
 D3D12MA::Allocator::CreateResource in the place where you would previously call
 `ID3D12Device::CreateCommittedResource`.
 
-The function has similar syntax, but it expect structure D3D12MA::ALLOCATION_DESC
+The function has similar syntax, but it expects structure D3D12MA::ALLOCATION_DESC
 to be passed along with `D3D12_RESOURCE_DESC` and other parameters for created
 resource. This structure describes parameters of the desired memory allocation,
 including choice of `D3D12_HEAP_TYPE`.
@@ -154,6 +155,65 @@ it, at different offsets, using `ID3D12Device::CreatePlacedResource`. The librar
 manages its own collection of allocated memory blocks (heaps) and remembers which
 parts of them are occupied and which parts are free to be used for new resources.
 
+
+\section quick_start_mapping_memory Mapping memory
+
+The process of getting regular CPU-side pointer to the memory of a resource in
+Direct3D is called "mapping". There are rules and restrictions to this process,
+as described in D3D12 documentation: [ID3D12Resource::Map method](https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/nf-d3d12-id3d12resource-map).
+
+Mapping happens on the level of particular resources, not entire memory heaps,
+and so it is out of scope of this library. Just as the linked documentation says:
+
+- Returned pointer refers to data of particular subresource, not entire memory heap.
+- You can map same resource multiple times. It is ref-counted internally.
+- Mapping is thread-safe.
+- Unmapping is not required before resource destruction.
+- Unmapping may not be required before using written data - some heap types on
+  some platforms support resources persistently mapped.
+
+When using this library, you can map and use your resources normally without
+considering whether they are created as placed resources in one large heap.
+
+Example for buffer created and filled in `UPLOAD` heap type:
+
+\code
+const UINT64 bufSize = 65536;
+const float* bufData = (...);
+
+D3D12_RESOURCE_DESC resourceDesc = {};
+resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+resourceDesc.Alignment = 0;
+resourceDesc.Width = bufSize;
+resourceDesc.Height = 1;
+resourceDesc.DepthOrArraySize = 1;
+resourceDesc.MipLevels = 1;
+resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+resourceDesc.SampleDesc.Count = 1;
+resourceDesc.SampleDesc.Quality = 0;
+resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+D3D12MA::ALLOCATION_DESC allocationDesc = {};
+allocationDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
+
+D3D12Resource* resource;
+D3D12MA::Allocation* allocation;
+HRESULT hr = allocator->CreateResource(
+    &allocationDesc,
+    &resourceDesc,
+    D3D12_RESOURCE_STATE_GENERIC_READ,
+    NULL,
+    &allocation,
+    IID_PPV_ARGS(&resource));
+
+void* mappedPtr;
+hr = resource->Map(0, NULL, &mappedPtr);
+
+memcpy(mappedPtr, bufData, bufSize);
+
+resource->Unmap(0, NULL);
+\endcode
 */
 
 #include <d3d12.h>
