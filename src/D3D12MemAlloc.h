@@ -24,7 +24,7 @@
 
 /** \mainpage D3D12 Memory Allocator
 
-<b>Version 0.0.1-alpha.1</b> (2019-06-06)
+<b>Version 0.0.1-alpha.1</b> (2019-06-07)
 
 Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved. \n
 License: MIT

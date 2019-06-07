@@ -1,3 +1,3 @@
-# 0.0.1 (2019-05-20)
+# 0.0.1-alpha.1</b> (2019-06-07)
 
-First version in development, AMD-internal.
+First version to be published.

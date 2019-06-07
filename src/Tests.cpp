@@ -512,6 +512,13 @@ void Test(const TestContext& ctx)
 {
     wprintf(L"TESTS BEGIN\n");
 
+    if(false)
+    {
+        ////////////////////////////////////////////////////////////////////////////////
+        // Temporarily insert custom tests here:
+        return;
+    }
+
     TestGroupBasics(ctx);
 
     wprintf(L"TESTS END\n");
