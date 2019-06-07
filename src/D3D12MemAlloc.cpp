@@ -2628,7 +2628,7 @@ HRESULT BlockVector::CreateD3d12Heap(ID3D12Heap*& outHeap, UINT64 size) const
 // Private class AllocatorPimpl implementation
 
 AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, const ALLOCATOR_DESC& desc) :
-    m_UseMutex((desc.Flags & ALLOCATOR_FLAG_EXTERNALLY_SYNCHRONIZED) == 0),
+    m_UseMutex((desc.Flags & ALLOCATOR_FLAG_SINGLETHREADED) == 0),
     m_Device(desc.pDevice),
     m_PreferredBlockSize(desc.PreferredBlockSize != 0 ? desc.PreferredBlockSize : D3D12MA_DEFAULT_BLOCK_SIZE),
     m_AllocationCallbacks(allocationCallbacks)
