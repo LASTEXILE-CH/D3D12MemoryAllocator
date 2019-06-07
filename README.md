@@ -8,41 +8,77 @@ Easy to integrate memory allocation library for Direct3D 12.
 
 **Changelog:** See [CHANGELOG.md](CHANGELOG.md)
 
-**Product page:** [Vulkan Memory Allocator on GPUOpen](https://gpuopen.com/gaming-product/Direct3D12MemoryAllocator/) (TODO...)
+**Product page:** [Vulkan Memory Allocator on GPUOpen](https://gpuopen.com/gaming-product/D3D12MemoryAllocator/) (TODO...)
 
 **Build status:**
 
-TODO... CI
+TODO
 
 # Problem
 
-TODO...
+Memory allocation and resource (buffer and texture) creation in new, explicit graphics APIs (Vulkan and Direct3D 12) is difficult comparing to older graphics APIs like Direct3D 11 or OpenGL because it is recommended to allocate bigger blocks of memory and assign parts of them to resources. [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/) is a library that implements this functionality for Vulkan. It is available online since 2017 and it is successfully used in many software projects, including some AAA game studios. This is an equivalent library for D3D12.
 
 # Features
 
-This library can help developers to manage memory allocations and resource creation by offering some higher-level functions:
+This library can help developers to manage memory allocations and resource creation by offering function `Allocator::CreateResource` similar to the standard `ID3D12Device::CreateCommittedResource`. It internally:
 
-1. TODO...
-2. TODO...
-3. TODO...
+- Allocates and keeps track of bigger memory heaps, used and unused ranges inside them, finds best matching unused ranges to create new resources there, as placed resources.
+- Automatically respects aligment requirements for created resources.
+- Automatically handles resource heap tier - whether it's `D3D12_RESOURCE_HEAP_TIER_1` that requires to keep certain classes of resources separate or `D3D12_RESOURCE_HEAP_TIER_2` that allows to keep them all together.
 
 Additional features:
 
-- TODO...
-- TODO...
-- TODO...
+- Well-documented - description of all classes and functions provided, along with chapters that contain general description and example code.
+- Thread-safety: Library is designed to be used by multithreaded code.
+- Configuration: Fill optional members of `ALLOCATOR_DESC` structure to provide custom CPU memory allocator and other parameters.
+- Customization: Predefine appropriate macros to provide your own implementation of external facilities used by the library, like assert, mutex, and atomic.
 
 # Prequisites
 
-- Self-contained C++ library in single pair of H + CPP files. No external dependencies other than standard C, C++ standard library and Windows SDK. STL containers are not used.
-- Object-oriented interface in a convention similar to Direct3D 12.
-- Error handling implemented by returning `HRESULT` error codes - same way as in Direct3D 12.
+- Self-contained C++ library in single pair of H + CPP files. No external dependencies other than standard C, C++ library and Windows SDK. STL containers, C++ exceptions, and RTTI are not used.
+- Object-oriented interface in a convention similar to D3D12.
+- Error handling implemented by returning `HRESULT` error codes - same way as in D3D12.
 - Interface documented using Doxygen-style comments.
-- TODO...
 
 # Example
 
-TODO
+Basic usage of this library is very simple. Advanced features are optional. After you created global `Allocator` object, a complete code needed to create a texture may look like this:
+
+```cpp
+D3D12_RESOURCE_DESC resourceDesc = {};
+resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+resourceDesc.Alignment = 0;
+resourceDesc.Width = 1024;
+resourceDesc.Height = 1024;
+resourceDesc.DepthOrArraySize = 1;
+resourceDesc.MipLevels = 1;
+resourceDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+resourceDesc.SampleDesc.Count = 1;
+resourceDesc.SampleDesc.Quality = 0;
+resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+D3D12MA::ALLOCATION_DESC allocationDesc = {};
+allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+
+D3D12Resource* resource;
+D3D12MA::Allocation* allocation;
+HRESULT hr = allocator->CreateResource(
+    &allocationDesc,
+    &resourceDesc,
+    D3D12_RESOURCE_STATE_COPY_DEST,
+    NULL,
+    &allocation,
+    IID_PPV_ARGS(&resource));
+```
+
+With this one function call:
+
+1. `ID3D12Heap` memory block is allocated if needed.
+2. An unused region of the memory block assigned.
+3. `ID3D12Resource` is created as placed resource, bound to this region.
+
+`Allocation` is an object that represents memory assigned to this texture. It can be queried for parameters like offset and size.
 
 # Read more
 
@@ -50,7 +86,7 @@ See **[Documentation](https://gpuopen-librariesandsdks.github.io/D3D12MemoryAllo
 
 # Software using this library
 
-- TODO... Cauldron?
+Place for the link to your project :)
 
 # See also
 
