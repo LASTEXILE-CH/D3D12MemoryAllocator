@@ -132,7 +132,7 @@ resourceDesc.SampleDesc.Quality = 0;
 resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-allocation::ALLOCATION_DESC allocationDesc = {};
+D3D12MA::ALLOCATION_DESC allocationDesc = {};
 allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
 
 D3D12Resource* resource;
