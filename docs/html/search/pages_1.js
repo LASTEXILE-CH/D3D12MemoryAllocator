@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['quick_20start',['Quick start',['../quick_start.html',1,'index']]]
+  ['d3d12_20memory_20allocator',['D3D12 Memory Allocator',['../index.html',1,'']]]
 ];

@@ -161,6 +161,13 @@ it, at different offsets, using `ID3D12Device::CreatePlacedResource`. The librar
 manages its own collection of allocated memory blocks (heaps) and remembers which
 parts of them are occupied and which parts are free to be used for new resources.
 
+The library also automatically handles resource heap tier.
+When `D3D12_FEATURE_DATA_D3D12_OPTIONS::ResourceHeapTier` equals `D3D12_RESOURCE_HEAP_TIER_1`,
+resources of 3 types: buffers, textures that are render targets or depth-stencil,
+and other textures must be kept in separate heaps. When `D3D12_RESOURCE_HEAP_TIER_2`,
+they can be kept together. By using this library, you don't need to handle this
+manually.
+
 
 \section quick_start_mapping_memory Mapping memory
 
@@ -282,7 +289,36 @@ HRESULT hr = D3D12MA::CreateAllocator(&allocatorDesc, &allocator);
 
 \section general_considerations_future_plans Future plans
 
+Features planned for future releases:
+
+Near future - feature parity with [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/), including:
+
+- Custom memory pools
+- Alternative allocation algorithms: linear allocator, buddy allocator
+- User data associated with D3D12MA::Allocation objects
+- Statistics about memory usage, number of allocations, allocated blocks etc.,
+  along with JSON dump that can be visualized on a picture
+- Support for priorities using `ID3D12Device1::SetResidencyPriority`
+- Support for "lost" allocations
+
+Later:
+
+- Memory defragmentation
+- Query for memory budget using `IDXGIAdapter3::QueryVideoMemoryInfo` and
+  sticking to this budget with allocations
+- Support for resource aliasing (overlap)
+- Support for multi-GPU (multi-adapter)
+
 \section general_considerations_features_not_supported Features not supported
+
+Features deliberately excluded from the scope of this library:
+
+- Descriptor allocation. Although also called "heaps", objects that represent
+  descriptors are separate part of the D3D12 API from buffers and textures.
+- Support for `D3D12_HEAP_TYPE_CUSTOM`. Only the default heap types are supported:
+  `D3D12_HEAP_TYPE_UPLOAD`, `D3D12_HEAP_TYPE_DEFAULT`, `D3D12_HEAP_TYPE_READBACK`.
+- Support for reserved (tiled) resources. We don't recommend using them.
+- Support for `ID3D12Device::Evict` and `MakeResident`. We don't recommend using them.
 
 */
 

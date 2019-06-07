@@ -113,7 +113,7 @@ Enumerations</h2></td></tr>
 <tr class="memdesc:abbad31a7e0b3d09d77f3fb704b77645e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bit flags to be used with ALLOCATION_DESC::Flags.  <a href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645e">More...</a><br /></td></tr>
 <tr class="separator:abbad31a7e0b3d09d77f3fb704b77645e"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ad5ae5a5e42b878f2e18ab5d1fbfb9916"><td class="memItemLeft" align="right" valign="top">enum &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916">ALLOCATOR_FLAGS</a> { <a class="el" href="namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916a2fb30967b492c27823a80b5de3aea26f">ALLOCATOR_FLAG_NONE</a> = 0, 
-<a class="el" href="namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916ac5f1c3537a1cdd4ed1ad569b44f1561a">ALLOCATOR_FLAG_EXTERNALLY_SYNCHRONIZED</a> = 0x1
+<a class="el" href="namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916a1b06bb21df006f76a9ed1bc41838bc52">ALLOCATOR_FLAG_SINGLETHREADED</a> = 0x1
  }</td></tr>
 <tr class="memdesc:ad5ae5a5e42b878f2e18ab5d1fbfb9916"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bit flags to be used with ALLOCATOR_DESC::Flags.  <a href="namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916">More...</a><br /></td></tr>
 <tr class="separator:ad5ae5a5e42b878f2e18ab5d1fbfb9916"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -234,7 +234,7 @@ Functions</h2></td></tr>
 <table class="fieldtable">
 <tr><th colspan="2">Enumerator</th></tr><tr><td class="fieldname"><a id="ad5ae5a5e42b878f2e18ab5d1fbfb9916a2fb30967b492c27823a80b5de3aea26f"></a>ALLOCATOR_FLAG_NONE&#160;</td><td class="fielddoc"><p>Zero. </p>
 </td></tr>
-<tr><td class="fieldname"><a id="ad5ae5a5e42b878f2e18ab5d1fbfb9916ac5f1c3537a1cdd4ed1ad569b44f1561a"></a>ALLOCATOR_FLAG_EXTERNALLY_SYNCHRONIZED&#160;</td><td class="fielddoc"><p><a class="el" href="class_d3_d12_m_a_1_1_allocator.html" title="Represents main object of this library initialized for particular ID3D12Device.">Allocator</a> and all objects created from it will not be synchronized internally, so you must guarantee they are used from only one thread at a time or synchronized externally by you.</p>
+<tr><td class="fieldname"><a id="ad5ae5a5e42b878f2e18ab5d1fbfb9916a1b06bb21df006f76a9ed1bc41838bc52"></a>ALLOCATOR_FLAG_SINGLETHREADED&#160;</td><td class="fielddoc"><p><a class="el" href="class_d3_d12_m_a_1_1_allocator.html" title="Represents main object of this library initialized for particular ID3D12Device.">Allocator</a> and all objects created from it will not be synchronized internally, so you must guarantee they are used from only one thread at a time or synchronized by you.</p>
 <p>Using this flag may increase performance because internal mutexes are not used. </p>
 </td></tr>
 </table>

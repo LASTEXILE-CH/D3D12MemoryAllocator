@@ -10,7 +10,7 @@ var searchData=
   ['allocation_5fflags',['ALLOCATION_FLAGS',['../namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645e',1,'D3D12MA::ALLOCATION_FLAGS()'],['../namespace_d3_d12_m_a.html#a90e538a80b72d66b59b36d1dbf1641fe',1,'D3D12MA::ALLOCATION_FLAGS()']]],
   ['allocator',['Allocator',['../class_d3_d12_m_a_1_1_allocator.html',1,'D3D12MA']]],
   ['allocator_5fdesc',['ALLOCATOR_DESC',['../struct_d3_d12_m_a_1_1_a_l_l_o_c_a_t_o_r___d_e_s_c.html',1,'D3D12MA']]],
-  ['allocator_5fflag_5fexternally_5fsynchronized',['ALLOCATOR_FLAG_EXTERNALLY_SYNCHRONIZED',['../namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916ac5f1c3537a1cdd4ed1ad569b44f1561a',1,'D3D12MA']]],
   ['allocator_5fflag_5fnone',['ALLOCATOR_FLAG_NONE',['../namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916a2fb30967b492c27823a80b5de3aea26f',1,'D3D12MA']]],
+  ['allocator_5fflag_5fsinglethreaded',['ALLOCATOR_FLAG_SINGLETHREADED',['../namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916a1b06bb21df006f76a9ed1bc41838bc52',1,'D3D12MA']]],
   ['allocator_5fflags',['ALLOCATOR_FLAGS',['../namespace_d3_d12_m_a.html#ad5ae5a5e42b878f2e18ab5d1fbfb9916',1,'D3D12MA::ALLOCATOR_FLAGS()'],['../namespace_d3_d12_m_a.html#acfd17bce30229bf7591cdefcfddb8e84',1,'D3D12MA::ALLOCATOR_FLAGS()']]]
 ];
