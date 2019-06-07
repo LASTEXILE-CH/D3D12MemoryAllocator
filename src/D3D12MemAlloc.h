@@ -40,6 +40,10 @@ Documentation of all members: D3D12MemAlloc.h
         - [Mapping memory](@ref quick_start_mapping_memory)
 - \subpage configuration
   - [Custom CPU memory allocator](@ref custom_memory_allocator)
+- \subpage general_considerations
+  - [Thread safety](@ref general_considerations_thread_safety)
+  - [Future plans](@ref general_considerations_future_plans)
+  - [Features not supported](@ref general_considerations_features_not_supported)
 		
 \section main_see_also See also
 
@@ -263,6 +267,23 @@ D3D12MA::Allocator* allocator;
 HRESULT hr = D3D12MA::CreateAllocator(&allocatorDesc, &allocator);
 \endcode
 
+
+\page general_considerations General considerations
+
+\section general_considerations_thread_safety Thread safety
+
+- The library has no global state, so separate D3D12MA::Allocator objects can be used independently.
+  In typical applications there should be no need to create multiple such objects though - one per `ID3D12Device` is enough.
+- All calls to methods of D3D12MA::Allocator class are safe to be made from multiple
+  threads simultaneously because they are synchronized internally when needed.
+- When the allocator is created with D3D12MA::ALLOCATOR_FLAG_SINGLETHREADED,
+  calls to methods of D3D12MA::Allocator class must be made from a single thread or synchronized by the user.
+  Using this flag may improve performance.
+
+\section general_considerations_future_plans Future plans
+
+\section general_considerations_features_not_supported Features not supported
+
 */
 
 #include <d3d12.h>
@@ -372,19 +393,19 @@ public:
 
     If the Allocation represents committed resource with implicit heap, returns 0.
     */
-    UINT64 GetOffset();
+    UINT64 GetOffset() const;
 
     /** \brief Returns size in bytes of the resource.
 
     Works also with committed resources.
     */
-    UINT64 GetSize() { return m_Size; }
+    UINT64 GetSize() const { return m_Size; }
 
     /** \brief Returns memory heap that the resource is created in.
 
     If the Allocation represents committed resource with implicit heap, returns NULL.
     */
-    ID3D12Heap* GetHeap();
+    ID3D12Heap* GetHeap() const;
 
 private:
     friend class AllocatorPimpl;
@@ -432,11 +453,11 @@ typedef enum ALLOCATOR_FLAGS
     /**
     Allocator and all objects created from it will not be synchronized internally,
     so you must guarantee they are used from only one thread at a time or
-    synchronized externally by you.
+    synchronized by you.
 
     Using this flag may increase performance because internal mutexes are not used.
     */
-    ALLOCATOR_FLAG_EXTERNALLY_SYNCHRONIZED = 0x1,
+    ALLOCATOR_FLAG_SINGLETHREADED = 0x1,
 } ALLOCATOR_FLAGS;
 
 /// \brief Parameters of created Allocator object. To be used with CreateAllocator().

@@ -2961,7 +2961,7 @@ void Allocation::Release()
     D3D12MA_DELETE(m_Allocator->GetAllocs(), this);
 }
 
-UINT64 Allocation::GetOffset()
+UINT64 Allocation::GetOffset() const
 {
     switch(m_Type)
     {
@@ -2975,7 +2975,7 @@ UINT64 Allocation::GetOffset()
     }
 }
 
-ID3D12Heap* Allocation::GetHeap()
+ID3D12Heap* Allocation::GetHeap() const
 {
     switch(m_Type)
     {
