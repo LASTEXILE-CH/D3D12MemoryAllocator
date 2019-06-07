@@ -36,12 +36,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef D3D12MA_DEBUG_MARGIN
-    // Minimum margin before and after every allocation, in bytes.
-    // Set nonzero for debugging purposes only.
-    #define D3D12MA_DEBUG_MARGIN (0)
-#endif
-
 #ifndef D3D12MA_ASSERT
     #include <cassert>
     #define D3D12MA_ASSERT(cond) assert(cond)
@@ -55,6 +49,41 @@
     #else
         #define D3D12MA_HEAVY_ASSERT(expr)
     #endif
+#endif
+
+#ifndef D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY
+    /*
+    Every allocation will have its own memory block.
+    Define to 1 for debugging purposes only.
+    */
+    #define D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY (0)
+#endif
+
+#ifndef D3D12MA_DEBUG_ALIGNMENT
+    /*
+    Minimum alignment of all allocations, in bytes.
+    Set to more than 1 for debugging purposes only. Must be power of two.
+    */
+    #define D3D12MA_DEBUG_ALIGNMENT (1)
+#endif
+
+#ifndef D3D12MA_DEBUG_MARGIN
+    // Minimum margin before and after every allocation, in bytes.
+    // Set nonzero for debugging purposes only.
+    #define D3D12MA_DEBUG_MARGIN (0)
+#endif
+
+#ifndef D3D12MA_DEBUG_GLOBAL_MUTEX
+    /*
+    Set this to 1 for debugging purposes only, to enable single mutex protecting all
+    entry calls to the library. Can be useful for debugging multithreading issues.
+    */
+    #define D3D12MA_DEBUG_GLOBAL_MUTEX (0)
+#endif
+
+#ifndef D3D12MA_DEFAULT_BLOCK_SIZE
+   /// Default size of a block allocated as single ID3D12Heap.
+   #define D3D12MA_DEFAULT_BLOCK_SIZE (256ull * 1024 * 1024)
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -207,35 +236,6 @@ If providing your own implementation, you need to implement a subset of std::ato
 */
 #ifndef D3D12MA_ATOMIC_UINT32
     #define D3D12MA_ATOMIC_UINT32 std::atomic<UINT>
-#endif
-
-#ifndef D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY
-    /*
-    Every allocation will have its own memory block.
-    Define to 1 for debugging purposes only.
-    */
-    #define D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY (0)
-#endif
-
-#ifndef D3D12MA_DEBUG_ALIGNMENT
-    /*
-    Minimum alignment of all allocations, in bytes.
-    Set to more than 1 for debugging purposes only. Must be power of two.
-    */
-    #define D3D12MA_DEBUG_ALIGNMENT (1)
-#endif
-
-#ifndef D3D12MA_DEBUG_GLOBAL_MUTEX
-    /**
-    Set this to 1 for debugging purposes only, to enable single mutex protecting all
-    entry calls to the library. Can be useful for debugging multithreading issues.
-    */
-    #define D3D12MA_DEBUG_GLOBAL_MUTEX (0)
-#endif
-
-#ifndef D3D12MA_DEFAULT_BLOCK_SIZE
-   /// Default size of a block allocated as single ID3D12Heap.
-   #define D3D12MA_DEFAULT_BLOCK_SIZE (256ull * 1024 * 1024)
 #endif
 
 // Aligns given value up to nearest multiply of align value. For example: AlignUp(11, 8) = 16.

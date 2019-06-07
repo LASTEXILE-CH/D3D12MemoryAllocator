@@ -38,6 +38,8 @@ Documentation of all members: D3D12MemAlloc.h
         - [Project setup](@ref quick_start_project_setup)
         - [Creating resources](@ref quick_start_creating_resources)
         - [Mapping memory](@ref quick_start_mapping_memory)
+- \subpage configuration
+  - [Custom CPU memory allocator](@ref custom_memory_allocator)
 		
 \section main_see_also See also
 
@@ -214,6 +216,53 @@ memcpy(mappedPtr, bufData, bufSize);
 
 resource->Unmap(0, NULL);
 \endcode
+
+
+\page configuration Configuration
+
+Please check file `D3D12MemAlloc.cpp` lines between "Configuration Begin" and
+"Configuration End" to find macros that you can define to change the behavior of
+the library, primarily for debugging purposes.
+
+\section custom_memory_allocator Custom CPU memory allocator
+
+If you use custom allocator for CPU memory rather than default C++ operator `new`
+and `delete` or `malloc` and `free` functions, you can make this library using
+your allocator as well by filling structure D3D12MA::ALLOCATION_CALLBACKS and
+passing it as optional member D3D12MA::ALLOCATOR_DESC::pAllocationCallbacks.
+Functions pointed there will be used by the library to make any CPU-side
+allocations. Example:
+
+\code
+#include <malloc.h>
+
+void* CustomAllocate(size_t Size, size_t Alignment, void* pUserData)
+{
+    void* memory = _aligned_malloc(Size, Alignment);
+    // Your extra bookkeeping here...
+    return memory;
+}
+
+void CustomFree(void* pMemory, void* pUserData)
+{
+    // Your extra bookkeeping here...
+    _aligned_free(pMemory);
+}
+
+(...)
+
+D3D12MA::ALLOCATION_CALLBACKS allocationCallbacks = {};
+allocationCallbacks.pAllocate = &CustomAllocate;
+allocationCallbacks.pFree = &CustomFree;
+
+D3D12MA::ALLOCATOR_DESC allocatorDesc = {};
+allocatorDesc.pDevice = device;
+allocatorDesc.pAllocationCallbacks = &allocationCallbacks;
+
+D3D12MA::Allocator* allocator;
+HRESULT hr = D3D12MA::CreateAllocator(&allocatorDesc, &allocator);
+\endcode
+
 */
 
 #include <d3d12.h>
