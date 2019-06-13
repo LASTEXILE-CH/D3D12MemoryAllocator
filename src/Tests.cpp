@@ -101,7 +101,7 @@ static void TestCommittedResources(const TestContext& ctx)
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
     allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
-    allocDesc.Flags = D3D12MA::ALLOCATION_FLAG_DEDICATED_MEMORY;
+    allocDesc.Flags = D3D12MA::ALLOCATION_FLAG_COMMITTED;
 
     D3D12_RESOURCE_DESC resourceDesc;
     FillResourceDescForBuffer(resourceDesc, bufSize);

@@ -51,12 +51,12 @@
     #endif
 #endif
 
-#ifndef D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY
+#ifndef D3D12MA_DEBUG_ALWAYS_COMMITTED
     /*
     Every allocation will have its own memory block.
     Define to 1 for debugging purposes only.
     */
-    #define D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY (0)
+    #define D3D12MA_DEBUG_ALWAYS_COMMITTED (0)
 #endif
 
 #ifndef D3D12MA_DEBUG_ALIGNMENT
@@ -1641,7 +1641,7 @@ public:
 
     // Unregisters allocation from the collection of dedicated allocations.
     // Allocation object must be deleted externally afterwards.
-    void FreeDedicatedMemory(Allocation* allocation);
+    void FreeCommittedMemory(Allocation* allocation);
     // Unregisters allocation from the collection of placed allocations.
     // Allocation object must be deleted externally afterwards.
     void FreePlacedMemory(Allocation* allocation);
@@ -1653,7 +1653,7 @@ private:
     Heuristics that decides whether a resource should better be placed in its own,
     dedicated allocation (committed resource rather than placed resource).
     */
-    static bool PrefersDedicatedAllocation(const D3D12_RESOURCE_DESC& resourceDesc);
+    static bool PrefersCommittedAllocation(const D3D12_RESOURCE_DESC& resourceDesc);
 
     bool m_UseMutex;
     ID3D12Device* m_Device;
@@ -1663,15 +1663,15 @@ private:
     D3D12_FEATURE_DATA_D3D12_OPTIONS m_D3D12Options;
 
     typedef Vector<Allocation*> AllocationVectorType;
-    AllocationVectorType* m_pDedicatedAllocations[HEAP_TYPE_COUNT];
-    D3D12MA_RW_MUTEX m_DedicatedAllocationsMutex[HEAP_TYPE_COUNT];
+    AllocationVectorType* m_pCommittedAllocations[HEAP_TYPE_COUNT];
+    D3D12MA_RW_MUTEX m_CommittedAllocationsMutex[HEAP_TYPE_COUNT];
 
     // Default pools.
     BlockVector* m_BlockVectors[DEFAULT_POOL_MAX_COUNT];
 
     // Allocates and registers new committed resource with implicit heap, as dedicated allocation.
     // Creates and returns Allocation objects.
-    HRESULT AllocateDedicatedMemory(
+    HRESULT AllocateCommittedMemory(
         const ALLOCATION_DESC* pAllocDesc,
         const D3D12_RESOURCE_DESC* pResourceDesc,
         const D3D12_RESOURCE_ALLOCATION_INFO& resAllocInfo,
@@ -2636,12 +2636,12 @@ AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, 
     // desc.pAllocationCallbacks intentionally ignored here, preprocessed by CreateAllocator.
     ZeroMemory(&m_D3D12Options, sizeof(m_D3D12Options));
 
-    ZeroMemory(m_pDedicatedAllocations, sizeof(m_pDedicatedAllocations));
+    ZeroMemory(m_pCommittedAllocations, sizeof(m_pCommittedAllocations));
     ZeroMemory(m_BlockVectors, sizeof(m_BlockVectors));
 
     for(UINT heapTypeIndex = 0; heapTypeIndex < HEAP_TYPE_COUNT; ++heapTypeIndex)
     {
-        m_pDedicatedAllocations[heapTypeIndex] = D3D12MA_NEW(GetAllocs(), AllocationVectorType)(GetAllocs());
+        m_pCommittedAllocations[heapTypeIndex] = D3D12MA_NEW(GetAllocs(), AllocationVectorType)(GetAllocs());
     }
 }
 
@@ -2683,12 +2683,12 @@ AllocatorPimpl::~AllocatorPimpl()
 
     for(UINT i = HEAP_TYPE_COUNT; i--; )
     {
-        if(m_pDedicatedAllocations[i] && !m_pDedicatedAllocations[i]->empty())
+        if(m_pCommittedAllocations[i] && !m_pCommittedAllocations[i]->empty())
         {
-            D3D12MA_ASSERT(0 && "Unfreed dedicated allocations found.");
+            D3D12MA_ASSERT(0 && "Unfreed committed allocations found.");
         }
 
-        D3D12MA_DELETE(GetAllocs(), m_pDedicatedAllocations[i]);
+        D3D12MA_DELETE(GetAllocs(), m_pCommittedAllocations[i]);
     }
 }
 
@@ -2722,20 +2722,20 @@ HRESULT AllocatorPimpl::CreateResource(
     D3D12MA_ASSERT(blockVector);
 
     const UINT64 preferredBlockSize = blockVector->GetPreferredBlockSize();
-    bool preferDedicatedMemory =
-        D3D12MA_DEBUG_ALWAYS_DEDICATED_MEMORY ||
-        PrefersDedicatedAllocation(*pResourceDesc) ||
-        // Heuristics: Allocate dedicated memory if requested size if greater than half of preferred block size.
+    bool preferCommittedMemory =
+        D3D12MA_DEBUG_ALWAYS_COMMITTED ||
+        PrefersCommittedAllocation(*pResourceDesc) ||
+        // Heuristics: Allocate committed memory if requested size if greater than half of preferred block size.
         resAllocInfo.SizeInBytes > preferredBlockSize / 2;
-    if(preferDedicatedMemory &&
+    if(preferCommittedMemory &&
         (finalAllocDesc.Flags & ALLOCATION_FLAG_NEVER_ALLOCATE) == 0)
     {
-        finalAllocDesc.Flags |= ALLOCATION_FLAG_DEDICATED_MEMORY;
+        finalAllocDesc.Flags |= ALLOCATION_FLAG_COMMITTED;
     }
 
-    if((finalAllocDesc.Flags & ALLOCATION_FLAG_DEDICATED_MEMORY) != 0)
+    if((finalAllocDesc.Flags & ALLOCATION_FLAG_COMMITTED) != 0)
     {
-        return AllocateDedicatedMemory(
+        return AllocateCommittedMemory(
             &finalAllocDesc,
             pResourceDesc,
             resAllocInfo,
@@ -2774,7 +2774,7 @@ HRESULT AllocatorPimpl::CreateResource(
             }
         }
 
-        return AllocateDedicatedMemory(
+        return AllocateCommittedMemory(
             &finalAllocDesc,
             pResourceDesc,
             resAllocInfo,
@@ -2786,13 +2786,13 @@ HRESULT AllocatorPimpl::CreateResource(
     }
 }
 
-bool AllocatorPimpl::PrefersDedicatedAllocation(const D3D12_RESOURCE_DESC& resourceDesc)
+bool AllocatorPimpl::PrefersCommittedAllocation(const D3D12_RESOURCE_DESC& resourceDesc)
 {
     // Intentional. It may change in the future.
     return false;
 }
 
-HRESULT AllocatorPimpl::AllocateDedicatedMemory(
+HRESULT AllocatorPimpl::AllocateCommittedMemory(
     const ALLOCATION_DESC* pAllocDesc,
     const D3D12_RESOURCE_DESC* pResourceDesc,
     const D3D12_RESOURCE_ALLOCATION_INFO& resAllocInfo,
@@ -2821,10 +2821,10 @@ HRESULT AllocatorPimpl::AllocateDedicatedMemory(
         const UINT heapTypeIndex = HeapTypeToIndex(pAllocDesc->HeapType);
 
         {
-            MutexLockWrite lock(m_DedicatedAllocationsMutex[heapTypeIndex], m_UseMutex);
-            AllocationVectorType* const dedicatedAllocations = m_pDedicatedAllocations[heapTypeIndex];
-            D3D12MA_ASSERT(dedicatedAllocations);
-            dedicatedAllocations->InsertSorted(alloc, PointerLess());
+            MutexLockWrite lock(m_CommittedAllocationsMutex[heapTypeIndex], m_UseMutex);
+            AllocationVectorType* const committedAllocations = m_pCommittedAllocations[heapTypeIndex];
+            D3D12MA_ASSERT(committedAllocations);
+            committedAllocations->InsertSorted(alloc, PointerLess());
         }
     }
     return hr;
@@ -2910,16 +2910,16 @@ void AllocatorPimpl::CalcDefaultPoolParams(D3D12_HEAP_TYPE& outHeapType, D3D12_H
     }
 }
 
-void AllocatorPimpl::FreeDedicatedMemory(Allocation* allocation)
+void AllocatorPimpl::FreeCommittedMemory(Allocation* allocation)
 {
     D3D12MA_ASSERT(allocation && allocation->m_Type == Allocation::TYPE_COMMITTED);
     const UINT heapTypeIndex = HeapTypeToIndex(allocation->m_Committed.heapType);
 
     {
-        MutexLockWrite lock(m_DedicatedAllocationsMutex[heapTypeIndex], m_UseMutex);
-        AllocationVectorType* const dedicatedAllocations = m_pDedicatedAllocations[heapTypeIndex];
-        D3D12MA_ASSERT(dedicatedAllocations);
-        bool success = dedicatedAllocations->RemoveSorted(allocation, PointerLess());
+        MutexLockWrite lock(m_CommittedAllocationsMutex[heapTypeIndex], m_UseMutex);
+        AllocationVectorType* const committedAllocations = m_pCommittedAllocations[heapTypeIndex];
+        D3D12MA_ASSERT(committedAllocations);
+        bool success = committedAllocations->RemoveSorted(allocation, PointerLess());
         D3D12MA_ASSERT(success);
     }
 }
@@ -2951,7 +2951,7 @@ void Allocation::Release()
     switch(m_Type)
     {
     case TYPE_COMMITTED:
-        m_Allocator->FreeDedicatedMemory(this);
+        m_Allocator->FreeCommittedMemory(this);
         break;
     case TYPE_PLACED:
         m_Allocator->FreePlacedMemory(this);

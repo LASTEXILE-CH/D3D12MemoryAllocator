@@ -374,11 +374,11 @@ typedef enum ALLOCATION_FLAGS
     ALLOCATION_FLAG_NONE = 0,
 
     /**
-    Set this flag if the allocation should have its own memory allocation (committed resource with implicit heap).
+    Set this flag if the allocation should have its own dedicated memory allocation (committed resource with implicit heap).
     
     Use it for special, big resources, like fullscreen textures used as render targets.
     */
-    ALLOCATION_FLAG_DEDICATED_MEMORY = 0x1,
+    ALLOCATION_FLAG_COMMITTED = 0x1,
 
     /**
     Set this flag to only try to allocate from existing memory heaps and never create new such heap.
@@ -386,7 +386,7 @@ typedef enum ALLOCATION_FLAGS
     If new allocation cannot be placed in any of the existing heaps, allocation
     fails with `E_OUTOFMEMORY` error.
 
-    You should not use #ALLOCATION_FLAG_DEDICATED_MEMORY and
+    You should not use #ALLOCATION_FLAG_COMMITTED and
     #ALLOCATION_FLAG_NEVER_ALLOCATE at the same time. It makes no sense.
     */
     ALLOCATION_FLAG_NEVER_ALLOCATE = 0x2,
