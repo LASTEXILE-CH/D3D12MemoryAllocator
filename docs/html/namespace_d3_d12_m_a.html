@@ -107,7 +107,7 @@ Typedefs</h2></td></tr>
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="enum-members"></a>
 Enumerations</h2></td></tr>
 <tr class="memitem:abbad31a7e0b3d09d77f3fb704b77645e"><td class="memItemLeft" align="right" valign="top">enum &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645e">ALLOCATION_FLAGS</a> { <a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645ea0bf578b096d6ea73cea86b031541733e">ALLOCATION_FLAG_NONE</a> = 0, 
-<a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645ead0630a1c0a611217a8cd9da07a0621cc">ALLOCATION_FLAG_DEDICATED_MEMORY</a> = 0x1, 
+<a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645ea661a5472dba3dcecc5a2cc92afd25675">ALLOCATION_FLAG_COMMITTED</a> = 0x1, 
 <a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645ea9a52c6ae694eadcd20896091e77c0628">ALLOCATION_FLAG_NEVER_ALLOCATE</a> = 0x2
  }</td></tr>
 <tr class="memdesc:abbad31a7e0b3d09d77f3fb704b77645e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bit flags to be used with ALLOCATION_DESC::Flags.  <a href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645e">More...</a><br /></td></tr>
@@ -207,12 +207,12 @@ Functions</h2></td></tr>
 <table class="fieldtable">
 <tr><th colspan="2">Enumerator</th></tr><tr><td class="fieldname"><a id="abbad31a7e0b3d09d77f3fb704b77645ea0bf578b096d6ea73cea86b031541733e"></a>ALLOCATION_FLAG_NONE&#160;</td><td class="fielddoc"><p>Zero. </p>
 </td></tr>
-<tr><td class="fieldname"><a id="abbad31a7e0b3d09d77f3fb704b77645ead0630a1c0a611217a8cd9da07a0621cc"></a>ALLOCATION_FLAG_DEDICATED_MEMORY&#160;</td><td class="fielddoc"><p>Set this flag if the allocation should have its own memory allocation (committed resource with implicit heap).</p>
+<tr><td class="fieldname"><a id="abbad31a7e0b3d09d77f3fb704b77645ea661a5472dba3dcecc5a2cc92afd25675"></a>ALLOCATION_FLAG_COMMITTED&#160;</td><td class="fielddoc"><p>Set this flag if the allocation should have its own dedicated memory allocation (committed resource with implicit heap).</p>
 <p>Use it for special, big resources, like fullscreen textures used as render targets. </p>
 </td></tr>
 <tr><td class="fieldname"><a id="abbad31a7e0b3d09d77f3fb704b77645ea9a52c6ae694eadcd20896091e77c0628"></a>ALLOCATION_FLAG_NEVER_ALLOCATE&#160;</td><td class="fielddoc"><p>Set this flag to only try to allocate from existing memory heaps and never create new such heap.</p>
 <p>If new allocation cannot be placed in any of the existing heaps, allocation fails with <code>E_OUTOFMEMORY</code> error.</p>
-<p>You should not use <a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645ead0630a1c0a611217a8cd9da07a0621cc">ALLOCATION_FLAG_DEDICATED_MEMORY</a> and <a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645ea9a52c6ae694eadcd20896091e77c0628">ALLOCATION_FLAG_NEVER_ALLOCATE</a> at the same time. It makes no sense. </p>
+<p>You should not use <a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645ea661a5472dba3dcecc5a2cc92afd25675">ALLOCATION_FLAG_COMMITTED</a> and <a class="el" href="namespace_d3_d12_m_a.html#abbad31a7e0b3d09d77f3fb704b77645ea9a52c6ae694eadcd20896091e77c0628">ALLOCATION_FLAG_NEVER_ALLOCATE</a> at the same time. It makes no sense. </p>
 </td></tr>
 </table>
 
