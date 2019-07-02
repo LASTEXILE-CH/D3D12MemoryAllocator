@@ -443,6 +443,23 @@ public:
     */
     ID3D12Heap* GetHeap() const;
 
+    /** \brief Associates a name with the allocation object. This name is for use in debug diagnostics and tools.
+
+    Internal copy of the string is made, so the memory pointed by the argument can be
+    changed of freed immediately after this call.
+
+    `Name` can be null.
+    */
+    void SetName(LPCWSTR Name);
+
+    /** \brief Returns the name associated with the allocation object.
+
+    Returned string points to an internal copy.
+
+    If no name was associated with the allocation, returns null.
+    */
+    LPCWSTR GetName() const { return m_Name; }
+
 private:
     friend class AllocatorPimpl;
     friend class BlockVector;
@@ -456,6 +473,7 @@ private:
         TYPE_COUNT
     } m_Type;
     UINT64 m_Size;
+    wchar_t* m_Name;
 
     union
     {
@@ -476,6 +494,7 @@ private:
     void InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType);
     void InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, DeviceMemoryBlock* block);
     DeviceMemoryBlock* GetBlock();
+    void FreeName();
 
     D3D12MA_CLASS_NO_COPY(Allocation)
 };

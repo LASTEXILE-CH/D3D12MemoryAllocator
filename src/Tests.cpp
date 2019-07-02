@@ -97,6 +97,13 @@ static void TestCommittedResources(const TestContext& ctx)
     
     const UINT count = 4;
     const UINT64 bufSize = 32ull * 1024;
+    const wchar_t* names[count] = {
+        L"Resource\nFoo\r\nBar",
+        L"Resource \"'&<>?#@!&-=_+[]{};:,./\\",
+        nullptr,
+        L"",
+    };
+
     ResourceWithAllocation resources[count];
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
@@ -120,6 +127,22 @@ static void TestCommittedResources(const TestContext& ctx)
         
         // Make sure it has implicit heap.
         CHECK_BOOL( resources[i].allocation->GetHeap() == NULL && resources[i].allocation->GetOffset() == 0 );
+
+        resources[i].allocation->SetName(names[i]);
+    }
+
+    // Check names.
+    for(UINT i = 0; i < count; ++i)
+    {
+        const wchar_t* const allocName = resources[i].allocation->GetName();
+        if(allocName)
+        {
+            CHECK_BOOL( wcscmp(allocName, names[i]) == 0 );
+        }
+        else
+        {
+            CHECK_BOOL(names[i] == NULL);
+        }
     }
 }
 

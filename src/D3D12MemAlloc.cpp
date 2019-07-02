@@ -2958,6 +2958,8 @@ void Allocation::Release()
         break;
     }
 
+    FreeName();
+
     D3D12MA_DELETE(m_Allocator->GetAllocs(), this);
 }
 
@@ -2989,6 +2991,18 @@ ID3D12Heap* Allocation::GetHeap() const
     }
 }
 
+void Allocation::SetName(LPCWSTR Name)
+{
+    FreeName();
+
+    if(Name)
+    {
+        const size_t nameCharCount = wcslen(Name) + 1;
+        m_Name = D3D12MA_NEW_ARRAY(m_Allocator->GetAllocs(), wchar_t, nameCharCount);
+        memcpy(m_Name, Name, nameCharCount * sizeof(wchar_t));
+    }
+}
+
 Allocation::Allocation()
 {
     // Must be empty because Allocation objects will be allocated out of PoolAllocator
@@ -3008,6 +3022,7 @@ void Allocation::InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEA
     m_Allocator = allocator;
     m_Type = TYPE_COMMITTED;
     m_Size = size;
+    m_Name = NULL;
     m_Committed.heapType = heapType;
 }
 
@@ -3016,6 +3031,7 @@ void Allocation::InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offse
     m_Allocator = allocator;
     m_Type = TYPE_PLACED;
     m_Size = size;
+    m_Name = NULL;
     m_Placed.offset = offset;
     m_Placed.block = block;
 }
@@ -3024,6 +3040,16 @@ DeviceMemoryBlock* Allocation::GetBlock()
 {
     D3D12MA_ASSERT(m_Type == TYPE_PLACED);
     return m_Placed.block;
+}
+
+void Allocation::FreeName()
+{
+    if(m_Name)
+    {
+        const size_t nameCharCount = wcslen(m_Name) + 1;
+        D3D12MA_DELETE_ARRAY(m_Allocator->GetAllocs(), m_Name, nameCharCount);
+        m_Name = NULL;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
