@@ -24,7 +24,7 @@
 
 /** \mainpage D3D12 Memory Allocator
 
-<b>Version 0.0.1-alpha.1</b> (2019-06-07)
+<b>Version 1.0.0</b> (2019-07-23)
 
 Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved. \n
 License: MIT
@@ -47,8 +47,8 @@ Documentation of all members: D3D12MemAlloc.h
 		
 \section main_see_also See also
 
-- [Product page on GPUOpen](https://gpuopen.com/gaming-product/d3d12-memory-allocator/) (TODO)
-- [Source repository on GitHub](https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator) (TODO)
+- [Product page on GPUOpen](https://gpuopen.com/gaming-product/D3D12MemoryAllocator/) (TODO)
+- [Source repository on GitHub](https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator)
 
 
 \page quick_start Quick start
@@ -56,7 +56,7 @@ Documentation of all members: D3D12MemAlloc.h
 \section quick_start_project_setup Project setup and initialization
 
 This is a small, standalone C++ library. It consists of a pair of 2 files:
-`%D3D12MemAlloc.h` header file with public interface and `D3D12MemAlloc.cpp` with
+"%D3D12MemAlloc.h" header file with public interface and "D3D12MemAlloc.cpp" with
 internal implementation. The only external dependencies are WinAPI, Direct3D 12,
 and parts of C/C++ standard library (but STL containers, exceptions, or RTTI are
 not used).
@@ -173,7 +173,7 @@ manually.
 
 The process of getting regular CPU-side pointer to the memory of a resource in
 Direct3D is called "mapping". There are rules and restrictions to this process,
-as described in D3D12 documentation: [ID3D12Resource::Map method](https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/nf-d3d12-id3d12resource-map).
+as described in D3D12 documentation of [ID3D12Resource::Map method](https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/nf-d3d12-id3d12resource-map).
 
 Mapping happens on the level of particular resources, not entire memory heaps,
 and so it is out of scope of this library. Just as the linked documentation says:
@@ -186,7 +186,7 @@ and so it is out of scope of this library. Just as the linked documentation says
   some platforms support resources persistently mapped.
 
 When using this library, you can map and use your resources normally without
-considering whether they are created as placed resources in one large heap.
+considering whether they are created as committed resources or placed resources in one large heap.
 
 Example for buffer created and filled in `UPLOAD` heap type:
 
@@ -291,11 +291,10 @@ HRESULT hr = D3D12MA::CreateAllocator(&allocatorDesc, &allocator);
 
 Features planned for future releases:
 
-Near future - feature parity with [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/), including:
+Near future: feature parity with [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/), including:
 
 - Custom memory pools
 - Alternative allocation algorithms: linear allocator, buddy allocator
-- User data associated with D3D12MA::Allocation objects
 - Statistics about memory usage, number of allocations, allocated blocks etc.,
   along with JSON dump that can be visualized on a picture
 - Support for priorities using `ID3D12Device1::SetResidencyPriority`

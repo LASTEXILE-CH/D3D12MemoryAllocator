@@ -2,13 +2,11 @@
 
 Easy to integrate memory allocation library for Direct3D 12.
 
-**Documentation:** See [D3D12 Memory Allocator](https://gpuopen-librariesandsdks.github.io/D3D12MemoryAllocator/html/) (generated from Doxygen-style comments in [src/D3D12MemAlloc.h](src/D3D12MemAlloc.h))
-
 **License:** MIT. See [LICENSE.txt](LICENSE.txt)
 
 **Changelog:** See [CHANGELOG.md](CHANGELOG.md)
 
-**Product page:** [Vulkan Memory Allocator on GPUOpen](https://gpuopen.com/gaming-product/D3D12MemoryAllocator/) (TODO...)
+**Product page:** [Vulkan Memory Allocator on GPUOpen](https://gpuopen.com/gaming-product/D3D12MemoryAllocator/) (TODO)
 
 **Build status:**
 
@@ -22,14 +20,14 @@ Memory allocation and resource (buffer and texture) creation in new, explicit gr
 
 This library can help developers to manage memory allocations and resource creation by offering function `Allocator::CreateResource` similar to the standard `ID3D12Device::CreateCommittedResource`. It internally:
 
-- Allocates and keeps track of bigger memory heaps, used and unused ranges inside them, finds best matching unused ranges to create new resources there, as placed resources.
+- Allocates and keeps track of bigger memory heaps, used and unused ranges inside them, finds best matching unused ranges to create new resources there as placed resources.
 - Automatically respects aligment requirements for created resources.
 - Automatically handles resource heap tier - whether it's `D3D12_RESOURCE_HEAP_TIER_1` that requires to keep certain classes of resources separate or `D3D12_RESOURCE_HEAP_TIER_2` that allows to keep them all together.
 
 Additional features:
 
 - Well-documented - description of all classes and functions provided, along with chapters that contain general description and example code.
-- Thread-safety: Library is designed to be used by multithreaded code.
+- Thread-safety: Library is designed to be used in multithreaded code.
 - Configuration: Fill optional members of `ALLOCATOR_DESC` structure to provide custom CPU memory allocator and other parameters.
 - Customization: Predefine appropriate macros to provide your own implementation of external facilities used by the library, like assert, mutex, and atomic.
 
@@ -80,9 +78,24 @@ With this one function call:
 
 `Allocation` is an object that represents memory assigned to this texture. It can be queried for parameters like offset and size.
 
-# Read more
+# Documentation
 
-See **[Documentation](https://gpuopen-librariesandsdks.github.io/D3D12MemoryAllocator/html/)**. (TODO...)
+Documentation is provided together with the library in form of Doxygen-style comments inside the code, in file "src/D3D12MemAlloc.h". They can be read directly or turned into HTML and other convenient to read formats. Unfortunately we can't provide pregenerated version browseable online. You can generate it on your own by following these steps:
+
+1. Install [Doxygen](http://www.doxygen.nl/).
+2. Open command line and enter "src" directory.
+3. Type command: `doxygen`
+4. Open following file in a web browser: "docs/html/index.html".
+
+# Copyright notice
+
+This software package uses third party software:
+
+- Parts of the code of [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/) by AMD, license: MIT
+- Parts of the code of [DirectX-Graphics-Samples](https://github.com/microsoft/DirectX-Graphics-Samples) by Microsoft, license: MIT
+- [Premake 5](https://premake.github.io/) binary, license: BSD
+
+For more information see [NOTICES.txt](NOTICES.txt).
 
 # Software using this library
 
