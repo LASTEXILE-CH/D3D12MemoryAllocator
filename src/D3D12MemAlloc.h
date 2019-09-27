@@ -536,6 +536,41 @@ struct ALLOCATOR_DESC
     const ALLOCATION_CALLBACKS* pAllocationCallbacks;
 };
 
+static const UINT HEAP_TYPE_COUNT = 3;
+
+/**
+\brief Calculated statistics of memory usage in entire allocator.
+*/
+struct StatInfo
+{
+    UINT BlockCount;
+    UINT AllocationCount;
+    UINT UnusedRangeCount;
+    UINT64 UsedBytes;
+    UINT64 UnusedBytes;
+    UINT64 AllocationSizeMin;
+    UINT64 AllocationSizeAvg;
+    UINT64 AllocationSizeMax;
+    UINT64 UnusedRangeSizeMin;
+    UINT64 UnusedRangeSizeAvg;
+    UINT64 UnusedRangeSizeMax;
+};
+
+/**
+\brief General statistics from the current state of the allocator.
+
+The HeapType array contains one StatInfo for each type of heap located at the
+following indices:
+0 - DEFAULT
+1 - UPLOAD
+2 - READBACK
+*/
+struct Stats
+{
+    StatInfo Total;
+    StatInfo HeapType[HEAP_TYPE_COUNT]; // for DEFAULT, UPLOAD, READBACK
+};
+
 /**
 \brief Represents main object of this library initialized for particular `ID3D12Device`.
 
@@ -576,6 +611,10 @@ public:
         Allocation** ppAllocation,
         REFIID riidResource,
         void** ppvResource);
+
+    /** \brief Retrieves statistics from the current state of the allocator.
+    */
+    void CalculateStats(Stats* pStats);
 
 private:
     friend HRESULT CreateAllocator(const ALLOCATOR_DESC*, Allocator**);
