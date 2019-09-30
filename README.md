@@ -6,22 +6,22 @@ Easy to integrate memory allocation library for Direct3D 12.
 
 **Changelog:** See [CHANGELOG.md](CHANGELOG.md)
 
-**Product page:** [Vulkan Memory Allocator on GPUOpen](https://gpuopen.com/gaming-product/D3D12MemoryAllocator/) (TODO)
+**Product page:** [D3D12 Memory Allocator on GPUOpen](https://gpuopen.com/gaming-product/d3d12-memory-allocator/)
 
 **Build status:**
 
-TODO
+Windows: [![Build status](https://ci.appveyor.com/api/projects/status/860i07bxv55ydgvg?svg=true)](https://ci.appveyor.com/project/adam-sawicki-amd/d3d12memoryallocator)
 
 # Problem
 
-Memory allocation and resource (buffer and texture) creation in new, explicit graphics APIs (Vulkan and Direct3D 12) is difficult comparing to older graphics APIs like Direct3D 11 or OpenGL because it is recommended to allocate bigger blocks of memory and assign parts of them to resources. [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/) is a library that implements this functionality for Vulkan. It is available online since 2017 and it is successfully used in many software projects, including some AAA game studios. This is an equivalent library for D3D12.
+Memory allocation and resource (buffer and texture) creation in new, explicit graphics APIs (Vulkan® and Direct3D 12) is difficult comparing to older graphics APIs like Direct3D 11 or OpenGL® because it is recommended to allocate bigger blocks of memory and assign parts of them to resources. [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/) is a library that implements this functionality for Vulkan. It is available online since 2017 and it is successfully used in many software projects, including some AAA game studios. This is an equivalent library for D3D12.
 
 # Features
 
 This library can help developers to manage memory allocations and resource creation by offering function `Allocator::CreateResource` similar to the standard `ID3D12Device::CreateCommittedResource`. It internally:
 
 - Allocates and keeps track of bigger memory heaps, used and unused ranges inside them, finds best matching unused ranges to create new resources there as placed resources.
-- Automatically respects aligment requirements for created resources.
+- Automatically respects alignment requirements for created resources.
 - Automatically handles resource heap tier - whether it's `D3D12_RESOURCE_HEAP_TIER_1` that requires to keep certain classes of resources separate or `D3D12_RESOURCE_HEAP_TIER_2` that allows to keep them all together.
 
 Additional features:
@@ -31,7 +31,7 @@ Additional features:
 - Configuration: Fill optional members of `ALLOCATOR_DESC` structure to provide custom CPU memory allocator and other parameters.
 - Customization: Predefine appropriate macros to provide your own implementation of external facilities used by the library, like assert, mutex, and atomic.
 
-# Prequisites
+# Prerequisites
 
 - Self-contained C++ library in single pair of H + CPP files. No external dependencies other than standard C, C++ library and Windows SDK. STL containers, C++ exceptions, and RTTI are not used.
 - Object-oriented interface in a convention similar to D3D12.

@@ -24,7 +24,7 @@
 
 /** \mainpage D3D12 Memory Allocator
 
-<b>Version 1.0.0</b> (2019-07-23)
+<b>Version 1.0.0</b> (2019-09-02)
 
 Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved. \n
 License: MIT
@@ -47,7 +47,7 @@ Documentation of all members: D3D12MemAlloc.h
 		
 \section main_see_also See also
 
-- [Product page on GPUOpen](https://gpuopen.com/gaming-product/D3D12MemoryAllocator/) (TODO)
+- [Product page on GPUOpen](https://gpuopen.com/gaming-product/d3d12-memory-allocator/)
 - [Source repository on GitHub](https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator)
 
 
