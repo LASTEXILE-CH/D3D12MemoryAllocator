@@ -536,17 +536,25 @@ struct ALLOCATOR_DESC
     const ALLOCATION_CALLBACKS* pAllocationCallbacks;
 };
 
-static const UINT HEAP_TYPE_COUNT = 3;
+/**
+\brief Number of D3D12 memory heap types supported.
+*/
+const UINT HEAP_TYPE_COUNT = 3;
 
 /**
 \brief Calculated statistics of memory usage in entire allocator.
 */
 struct StatInfo
 {
+    /// Number of memory blocks (heaps) allocated.
     UINT BlockCount;
+    /// Number of D3D12MA::Allocation objects allocated.
     UINT AllocationCount;
+    /// Number of free ranges of memory between allocations.
     UINT UnusedRangeCount;
+    /// Total number of bytes occupied by all allocations.
     UINT64 UsedBytes;
+    /// Total number of bytes occupied by unused ranges.
     UINT64 UnusedBytes;
     UINT64 AllocationSizeMin;
     UINT64 AllocationSizeAvg;
@@ -558,17 +566,16 @@ struct StatInfo
 
 /**
 \brief General statistics from the current state of the allocator.
-
-The HeapType array contains one StatInfo for each type of heap located at the
-following indices:
-0 - DEFAULT
-1 - UPLOAD
-2 - READBACK
 */
 struct Stats
 {
+    /// Total statistics from all heap types.
     StatInfo Total;
-    StatInfo HeapType[HEAP_TYPE_COUNT]; // for DEFAULT, UPLOAD, READBACK
+    /**
+    One StatInfo for each type of heap located at the following indices:
+    0 - DEFAULT, 1 - UPLOAD, 2 - READBACK.
+    */
+    StatInfo HeapType[HEAP_TYPE_COUNT];
 };
 
 /**

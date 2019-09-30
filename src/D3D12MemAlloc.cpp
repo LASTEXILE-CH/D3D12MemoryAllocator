@@ -1431,6 +1431,8 @@ public:
 
 protected:
     const ALLOCATION_CALLBACKS* GetAllocs() const { return m_pAllocationCallbacks; }
+
+private:
     UINT64 m_Size;
 
 private:
@@ -1507,7 +1509,7 @@ private:
 
 /*
 Represents a single block of device memory (heap) with all the data about its
-regions (aka suballocations, #Allocation), assigned and free.
+regions (aka suballocations, Allocation), assigned and free.
 
 Thread-safety: This class must be externally synchronized.
 */
@@ -1591,8 +1593,7 @@ public:
     void Free(
         Allocation* hAllocation);
 
-    void AddStats(
-        Stats *pStats);
+    void AddStats(Stats& outpStats);
 
 private:
     static UINT64 HeapFlagsToAlignment(D3D12_HEAP_FLAGS flags);
@@ -1674,7 +1675,7 @@ public:
     // Allocation object must be deleted externally afterwards.
     void FreePlacedMemory(Allocation* allocation);
 
-    void CalculateStats(Stats *pStats);
+    void CalculateStats(Stats& outStats);
 
 private:
     friend class Allocator;
@@ -2221,7 +2222,7 @@ void BlockMetadata_Generic::CalcAllocationStatInfo(StatInfo& outInfo) const
     outInfo.AllocationCount = rangeCount - m_FreeCount;
     outInfo.UnusedRangeCount = m_FreeCount;
 
-    outInfo.UsedBytes = m_Size - m_SumFreeSize;
+    outInfo.UsedBytes = GetSize() - m_SumFreeSize;
     outInfo.UnusedBytes = m_SumFreeSize;
 
     outInfo.AllocationSizeMin = UINT64_MAX;
@@ -2688,22 +2689,22 @@ HRESULT BlockVector::CreateD3d12Heap(ID3D12Heap*& outHeap, UINT64 size) const
     return m_hAllocator->GetDevice()->CreateHeap(&heapDesc, IID_PPV_ARGS(&outHeap));
 }
 
-void BlockVector::AddStats(Stats* pStats)
+void BlockVector::AddStats(Stats& outStats)
 {
     const UINT heapTypeIndex = HeapTypeToIndex(m_HeapType);
-    StatInfo* const pStatInfo = &pStats->HeapType[heapTypeIndex];
+    StatInfo* const pStatInfo = &outStats.HeapType[heapTypeIndex];
 
-    MutexLockWrite lock(m_Mutex, m_hAllocator->UseMutex());
+    MutexLockRead lock(m_Mutex, m_hAllocator->UseMutex());
 
     for(size_t i = 0; i < m_Blocks.size(); ++i)
     {
         const DeviceMemoryBlock* const pBlock = m_Blocks[i];
         D3D12MA_ASSERT(pBlock);
         D3D12MA_HEAVY_ASSERT(pBlock->Validate());
-        StatInfo allocationStatInfo;
-        pBlock->m_pMetadata->CalcAllocationStatInfo(allocationStatInfo);
-        AddStatInfo(pStats->Total, allocationStatInfo);
-        AddStatInfo(*pStatInfo, allocationStatInfo);
+        StatInfo blockStatInfo;
+        pBlock->m_pMetadata->CalcAllocationStatInfo(blockStatInfo);
+        AddStatInfo(outStats.Total, blockStatInfo);
+        AddStatInfo(*pStatInfo, blockStatInfo);
     }
 }
 
@@ -3018,16 +3019,16 @@ void AllocatorPimpl::FreePlacedMemory(Allocation* allocation)
     blockVector->Free(allocation);
 }
 
-void AllocatorPimpl::CalculateStats(Stats* pStats)
+void AllocatorPimpl::CalculateStats(Stats& outStats)
 {
     // Init stats
-    memset(pStats, 0, sizeof(*pStats));
-    pStats->Total.AllocationSizeMin = UINT64_MAX;
-    pStats->Total.UnusedRangeSizeMin = UINT64_MAX;
+    memset(&outStats, 0, sizeof(outStats));
+    outStats.Total.AllocationSizeMin = UINT64_MAX;
+    outStats.Total.UnusedRangeSizeMin = UINT64_MAX;
     for(size_t i = 0; i < HEAP_TYPE_COUNT; i++)
     {
-        pStats->HeapType[i].AllocationSizeMin = UINT64_MAX;
-        pStats->HeapType[i].UnusedRangeSizeMin = UINT64_MAX;
+        outStats.HeapType[i].AllocationSizeMin = UINT64_MAX;
+        outStats.HeapType[i].UnusedRangeSizeMin = UINT64_MAX;
     }
 
     // Process deafult pools.
@@ -3035,14 +3036,14 @@ void AllocatorPimpl::CalculateStats(Stats* pStats)
     {
         BlockVector* const pBlockVector = m_BlockVectors[i];
         D3D12MA_ASSERT(pBlockVector);
-        pBlockVector->AddStats(pStats);
+        pBlockVector->AddStats(outStats);
     }
 
     // Process committed allocations.
     for(size_t i = 0; i < HEAP_TYPE_COUNT; ++i)
     {
-        StatInfo& heapStatInfo = pStats->HeapType[i];
-        MutexLockWrite lock(m_CommittedAllocationsMutex[i], m_UseMutex);
+        StatInfo& heapStatInfo = outStats.HeapType[i];
+        MutexLockRead lock(m_CommittedAllocationsMutex[i], m_UseMutex);
         const AllocationVectorType* const allocationVector = m_pCommittedAllocations[i];
         D3D12MA_ASSERT(allocationVector);
         for(size_t j = 0, count = allocationVector->size(); j < count; ++j)
@@ -3058,15 +3059,15 @@ void AllocatorPimpl::CalculateStats(Stats* pStats)
             statInfo.AllocationSizeMax = size;
             statInfo.UnusedRangeSizeMin = 0;
             statInfo.UnusedRangeSizeMax = 0;
-            AddStatInfo(pStats->Total, statInfo);
+            AddStatInfo(outStats.Total, statInfo);
             AddStatInfo(heapStatInfo, statInfo);
         }
     }
 
     // Post process
-    PostProcessStatInfo(pStats->Total);
+    PostProcessStatInfo(outStats.Total);
     for(size_t i = 0; i < HEAP_TYPE_COUNT; ++i)
-        PostProcessStatInfo(pStats->HeapType[i]);
+        PostProcessStatInfo(outStats.HeapType[i]);
 }
 
 
@@ -3233,7 +3234,7 @@ void Allocator::CalculateStats(Stats* pStats)
 {
     D3D12MA_ASSERT(pStats);
     D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
-    m_Pimpl->CalculateStats(pStats);
+    m_Pimpl->CalculateStats(*pStats);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
