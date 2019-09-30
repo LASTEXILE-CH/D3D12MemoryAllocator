@@ -295,8 +295,7 @@ Near future: feature parity with [Vulkan Memory Allocator](https://github.com/GP
 
 - Custom memory pools
 - Alternative allocation algorithms: linear allocator, buddy allocator
-- Statistics about memory usage, number of allocations, allocated blocks etc.,
-  along with JSON dump that can be visualized on a picture
+- JSON dump that can be visualized on a picture
 - Support for priorities using `ID3D12Device1::SetResidencyPriority`
 - Support for "lost" allocations
 
