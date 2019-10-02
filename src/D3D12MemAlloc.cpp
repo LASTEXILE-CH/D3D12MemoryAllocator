@@ -1671,7 +1671,7 @@ public:
     HRESULT CreateAliasingResources(
         const ALLOCATION_DESC* pAllocDesc,
         UINT NumResources,
-        const D3D12_RESOURCE_DESC* const* ppResourceDescs,
+        const D3D12_RESOURCE_DESC* ppResourceDescs,
         const D3D12_RESOURCE_STATES* pInitialResourceStates,
         const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
         UINT NumInterferences,
@@ -1733,7 +1733,7 @@ private:
     HRESULT CreateCommittedResources(
         const ALLOCATION_DESC* pAllocDesc,
         UINT NumResources,
-        const D3D12_RESOURCE_DESC* const* ppResourceDescs,
+        const D3D12_RESOURCE_DESC* ppResourceDescs,
         const D3D12_RESOURCE_STATES* pInitialResourceStates,
         const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
         Allocation** ppAllocations,
@@ -2901,7 +2901,7 @@ HRESULT AllocatorPimpl::CreateResource(
 HRESULT AllocatorPimpl::CreateAliasingResources(
     const ALLOCATION_DESC* pAllocDesc,
     UINT NumResources,
-    const D3D12_RESOURCE_DESC* const* ppResourceDescs,
+    const D3D12_RESOURCE_DESC* ppResourceDescs,
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
     UINT NumInterferences,
@@ -3011,7 +3011,7 @@ HRESULT AllocatorPimpl::AllocateCommittedMemory(
 HRESULT AllocatorPimpl::CreateCommittedResources(
     const ALLOCATION_DESC* pAllocDesc,
     UINT NumResources,
-    const D3D12_RESOURCE_DESC* const* ppResourceDescs,
+    const D3D12_RESOURCE_DESC* ppResourceDescs,
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
     Allocation** ppAllocations,
@@ -3024,7 +3024,7 @@ HRESULT AllocatorPimpl::CreateCommittedResources(
     {
         hr = CreateResource(
             pAllocDesc,
-            ppResourceDescs[resIndex],
+            &ppResourceDescs[resIndex],
             pInitialResourceStates[resIndex],
             ppOptimizedClearValues ? ppOptimizedClearValues[resIndex] : NULL,
             &ppAllocations[resIndex],
@@ -3375,7 +3375,7 @@ void Allocator::CalculateStats(Stats* pStats)
 HRESULT Allocator::CreateAliasingResources(
     const ALLOCATION_DESC* pAllocDesc,
     UINT NumResources,
-    const D3D12_RESOURCE_DESC* const* ppResourceDescs,
+    const D3D12_RESOURCE_DESC* ppResourceDescs,
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
     UINT NumInterferences,
@@ -3389,7 +3389,6 @@ HRESULT Allocator::CreateAliasingResources(
         D3D12MA_ASSERT(pAllocDesc && ppResourceDescs && pInitialResourceStates && ppAllocations && piidResources && ppResources);
         for(UINT resIndex = 0; resIndex < NumResources; ++resIndex)
         {
-            D3D12MA_ASSERT(ppResourceDescs[resIndex]);
             ppAllocations[resIndex] = NULL;
             ppResources[resIndex] = NULL;
         }

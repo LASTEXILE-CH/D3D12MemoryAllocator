@@ -661,7 +661,7 @@ public:
     HRESULT CreateAliasingResources(
         const ALLOCATION_DESC* pAllocDesc,
         UINT NumResources,
-        const D3D12_RESOURCE_DESC* const* ppResourceDescs,
+        const D3D12_RESOURCE_DESC* ppResourceDescs,
         const D3D12_RESOURCE_STATES* pInitialResourceStates,
         const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
         UINT NumInterferences,

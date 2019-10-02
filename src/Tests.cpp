@@ -370,6 +370,56 @@ static void TestStats(const TestContext& ctx)
     CheckStatInfo(endStats.HeapType[2]);
 }
 
+static void TestAliasing(const TestContext& ctx)
+{
+    wprintf(L"Test aliasing\n");
+    
+    const UINT smallBufCount = 10;
+    const UINT resourceCount = smallBufCount
+        + 1; // Big buffer.
+    const UINT64 smallBufSize = 64ull * 1024;
+    const UINT64 bigBufSize = 10ull * 1024 * 1024;
+    ResourceWithAllocation resources[resourceCount];
+
+    D3D12MA::ALLOCATION_DESC allocDesc = {};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_RESOURCE_DESC resourceDescs[resourceCount];
+    FillResourceDescForBuffer(resourceDescs[0], smallBufSize);
+    for(UINT i = 1; i < smallBufCount; ++i)
+        resourceDescs[i] = resourceDescs[0];
+    FillResourceDescForBuffer(resourceDescs[smallBufCount], bigBufSize);
+
+    {
+        D3D12_RESOURCE_STATES initialStates[resourceCount];
+        IID iidResources[resourceCount];
+        for(UINT i = 0; i < resourceCount; ++i)
+        {
+            initialStates[i] = D3D12_RESOURCE_STATE_COMMON;
+            iidResources[i] = __uuidof(ID3D12Resource);
+        }
+        D3D12MA::Allocation* outAllocations[resourceCount] = {};
+        ID3D12Resource* outResources[resourceCount] = {};
+        CHECK_HR( ctx.allocator->CreateAliasingResources(
+            &allocDesc,
+            resourceCount,
+            resourceDescs,
+            initialStates,
+            NULL, // ppOptimizedClearValues
+            0, // NumInterferences
+            NULL, // pInterferences
+            outAllocations,
+            iidResources,
+            (void**)outResources) );
+        for(UINT i = 0; i < resourceCount; ++i)
+        {
+            resources[i].allocation.reset(outAllocations[i]);
+            resources[i].resource.p = outResources[i];
+        }
+    }
+
+}
+
 static void TestTransfer(const TestContext& ctx)
 {
     wprintf(L"Test mapping\n");
@@ -617,6 +667,7 @@ static void TestGroupBasics(const TestContext& ctx)
     TestPlacedResources(ctx);
     TestMapping(ctx);
     TestStats(ctx);
+    TestAliasing(ctx);
     TestTransfer(ctx);
     TestMultithreading(ctx);
 }
