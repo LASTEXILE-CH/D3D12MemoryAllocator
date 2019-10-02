@@ -645,7 +645,7 @@ public:
     not happy with their placement, try to change their order in the input arrays.
 
     Currently the function always allocates a new heap or heaps for the group of created
-    resources, so call with D3D12::ALLOCATION_FLAG_NEVER_ALLOCATE will fail.
+    resources, so call with #ALLOCATION_FLAG_NEVER_ALLOCATE will fail.
 
     \param pAllocDesc   Description of allocation, common for all created resources.
     \param NumResources   Number of resources to create.
@@ -654,9 +654,9 @@ public:
     \param ppOptimizedClearValues   Either null or array of optimized clear values for created resources. If not null, must have `NumResources` elements.
     \param NumInterferences   Number of interferences between resources.
     \param pInterferences   Array of interferences between resources. Must have `NumInterferences` elements.
-    \param ppAllocation[out]   Pointer to array of pointers to allocations, to be filled by this function. Must have `NumResources` elements.
+    \param[out] ppAllocations   Pointer to array of pointers to allocations, to be filled by this function. Must have `NumResources` elements.
     \param piidResources   Array of IID of created resources. Must have `NumResources` elements.
-    \param ppResources[out]   Pointer to array of pointers to D3D12 resources, to be filled by this function. Must have `NumResources` elements.
+    \param[out] ppResources   Pointer to array of pointers to D3D12 resources, to be filled by this function. Must have `NumResources` elements.
     */
     HRESULT CreateAliasingResources(
         const ALLOCATION_DESC* pAllocDesc,
@@ -684,8 +684,8 @@ public:
 
     \param NumResourcesAfter   Number of resources to be used.
     \param pResourcesAfter   Array of resources to be used. Must have `NumResourcesAfter` elements.
-    \param pNumBarriers[inout]   Number of barriers to be issued before use of the resources.
-    \param pBarriers[out]   Either null or array of barriers to be issed before use of the resources. Filled by the function.
+    \param[in,out] pNumBarriers   Number of barriers to be issued before use of the resources.
+    \param[out] pBarriers   Either null or array of barriers to be issed before use of the resources. Filled by the function.
     */
     HRESULT GetAliasingBarriers(
         UINT NumResourcesAfter,
