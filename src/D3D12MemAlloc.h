@@ -24,7 +24,7 @@
 
 /** \mainpage D3D12 Memory Allocator
 
-<b>Version 1.0.0-development</b> (2019-09-30)
+<b>Version 1.0.0-development</b> (2019-10-02)
 
 Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved. \n
 License: MIT
@@ -578,6 +578,18 @@ struct Stats
 };
 
 /**
+\brief Interference between two resources created using D3D12::Allocator::CreateAliasingResources.
+
+It means two resources specified may be used at the same time, so they cannot alias each other in memory.
+Both members are indices to the arrays passed/retrieved as parameters to D3D12::Allocator::CreateAliasingResources.
+ */
+struct ResourceInterference
+{
+    UINT ResourceIndex1;
+    UINT ResourceIndex2;
+};
+
+/**
 \brief Represents main object of this library initialized for particular `ID3D12Device`.
 
 Fill structure D3D12MA::ALLOCATOR_DESC and call function CreateAllocator() to create it.
@@ -621,6 +633,65 @@ public:
     /** \brief Retrieves statistics from the current state of the allocator.
     */
     void CalculateStats(Stats* pStats);
+
+    /** \brief Creates a number of resources at once that can alias each other in memory.
+
+    Interferences specify pairs of resources that CANNOT alias each other because they
+    may be used at the same time. If `NumInterferences` is 0, all created resources can
+    be placed in the same region of memory.
+
+    The algorithm for for resource placement is linear and pretty simple. It doesn't try
+    to figure out optimal layout of created resources out of all possibilities. If you are
+    not happy with their placement, try to change their order in the input arrays.
+
+    Currently the function always allocates a new heap or heaps for the group of created
+    resources, so call with D3D12::ALLOCATION_FLAG_NEVER_ALLOCATE will fail.
+
+    \param pAllocDesc   Description of allocation, common for all created resources.
+    \param NumResources   Number of resources to create.
+    \param ppResourceDescs   Array of description of created resources. Must have `NumResources` elements.
+    \param pInitialResourceStates   Array of initial states of created resources. Must have `NumResources` elements.
+    \param ppOptimizedClearValues   Either null or array of optimized clear values for created resources. If not null, must have `NumResources` elements.
+    \param NumInterferences   Number of interferences between resources.
+    \param pInterferences   Array of interferences between resources. Must have `NumInterferences` elements.
+    \param ppAllocation[out]   Pointer to array of pointers to allocations, to be filled by this function. Must have `NumResources` elements.
+    \param piidResources   Array of IID of created resources. Must have `NumResources` elements.
+    \param ppResources[out]   Pointer to array of pointers to D3D12 resources, to be filled by this function. Must have `NumResources` elements.
+    */
+    HRESULT CreateAliasingResources(
+        const ALLOCATION_DESC* pAllocDesc,
+        UINT NumResources,
+        const D3D12_RESOURCE_DESC* const* ppResourceDescs,
+        const D3D12_RESOURCE_STATES* pInitialResourceStates,
+        const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
+        UINT NumInterferences,
+        const ResourceInterference* pInterferences,
+        Allocation** ppAllocations,
+        const IID* piidResources,
+        void** ppResources);
+
+    /** \brief Returns array of aliasing barriers to be issued before use of specific resources.
+
+    The function can work in two modes:
+
+    - If `pBarriers` is null, `pNumBarriers` is output parameter, filled with number of
+      barriers (elements in the output array) needed.
+    - If `pBarriers` is not null, it must point to an array. `pNumBarriers` is input-output
+      parameter. On input it means capacity of the array. It is set to number of elements
+      written.
+
+    All returned barriers are of type `D3D12_RESOURCE_BARRIER_TYPE_ALIASING`.
+
+    \param NumResourcesAfter   Number of resources to be used.
+    \param pResourcesAfter   Array of resources to be used. Must have `NumResourcesAfter` elements.
+    \param pNumBarriers[inout]   Number of barriers to be issued before use of the resources.
+    \param pBarriers[out]   Either null or array of barriers to be issed before use of the resources. Filled by the function.
+    */
+    HRESULT GetAliasingBarriers(
+        UINT NumResourcesAfter,
+        ID3D12Resource* pResourcesAfter,
+        UINT* pNumBarriers,
+        D3D12_RESOURCE_BARRIER* pBarriers);
 
 private:
     friend HRESULT CreateAllocator(const ALLOCATOR_DESC*, Allocator**);
