@@ -600,6 +600,22 @@ struct ResourceInterference
     UINT ResourceIndex2;
 };
 
+/** \brief Statistics of aliasing resources returned by D3D12MA::Allocator::CreateAliasingResources.
+
+Alising successfully saving memory can be observed when `UsedBytes` < `SumSizeInBytes`.
+*/
+struct AliasingStats
+{
+    /// Number of new memory blocks (heaps) created for new resources.
+    UINT BlockCount;
+    /// Sum of sizes of all new resources.
+    UINT64 SumSizeInBytes;
+    /// Total number of bytes occupied by new allocations.
+    UINT64 UsedBytes;
+    /// Total number of bytes allocated but unused.
+    UINT64 UnusedBytes;
+};
+
 /**
 \brief Represents main object of this library initialized for particular `ID3D12Device`.
 
@@ -690,6 +706,7 @@ public:
     \param pInterferences   Array of interferences between resources. Must have `NumInterferences` elements.
     \param[out] ppAllocations   Pointer to array of pointers to allocations, to be filled by this function. Must have `NumResources` elements.
     \param[out] ppvResources   Optional. Either null or pointer to array of pointers to D3D12 resources, to be filled by this function. Must have `NumResources` elements.
+    \param[out] pStats   Optional. Either null or pointer to a structure to be filled with statistics.
     */
     HRESULT CreateAliasingResources(
         const ALLOCATION_DESC* pAllocDesc,
@@ -700,7 +717,8 @@ public:
         UINT NumInterferences,
         const ResourceInterference* pInterferences,
         Allocation** ppAllocations,
-        void** ppvResources);
+        void** ppvResources,
+        AliasingStats* pStats);
 
     /** \brief Returns array of aliasing barriers to be issued before use of specific allocations.
 

@@ -1728,7 +1728,8 @@ public:
         UINT NumInterferences,
         const ResourceInterference* pInterferences,
         Allocation** ppAllocations,
-        void** ppvResources);
+        void** ppvResources,
+        AliasingStats* pStats);
 
     HRESULT GetAliasingBarriers(
         UINT NumAllocationsAfter,
@@ -1787,7 +1788,8 @@ private:
         const D3D12_RESOURCE_STATES* pInitialResourceStates,
         const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
         Allocation** ppAllocations,
-        void** ppResources);
+        void** ppResources,
+        AliasingStats* pStats);
 
     /*
     If SupportsResourceHeapTier2():
@@ -3057,8 +3059,14 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
     UINT NumInterferences,
     const ResourceInterference* pInterferences,
     Allocation** ppAllocations,
-    void** ppvResources)
+    void** ppvResources,
+    AliasingStats* pStats)
 {
+    if(pStats != NULL)
+    {
+        ZeroMemory(pStats, sizeof(*pStats));
+    }
+
     // Degenerate case.
     if(NumResources == 0)
     {
@@ -3079,7 +3087,8 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
             pInitialResourceStates,
             ppOptimizedClearValues,
             ppAllocations,
-            ppvResources);
+            ppvResources,
+            pStats);
     }
 
     // TODO Implement proper aliasing.
@@ -3090,7 +3099,8 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
         pInitialResourceStates,
         ppOptimizedClearValues,
         ppAllocations,
-        ppvResources);
+        ppvResources,
+        pStats);
 }
 
 HRESULT AllocatorPimpl::GetAliasingBarriers(
@@ -3170,14 +3180,19 @@ HRESULT AllocatorPimpl::CreateCommittedResources(
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
     Allocation** ppAllocations,
-    void** ppvResources)
+    void** ppvResources,
+    AliasingStats* pStats)
 {
     HRESULT hr = S_OK;
+
+    ALLOCATION_DESC finalAllocDesc = *pAllocDesc;
+    finalAllocDesc.Flags |= ALLOCATION_FLAG_COMMITTED;
+
     UINT resIndex;
     for(resIndex = 0; resIndex < NumResources; ++resIndex)
     {
         hr = CreateResource(
-            pAllocDesc,
+            &finalAllocDesc,
             &pResourceDescs[resIndex],
             pInitialResourceStates[resIndex],
             ppOptimizedClearValues ? ppOptimizedClearValues[resIndex] : NULL,
@@ -3187,6 +3202,13 @@ HRESULT AllocatorPimpl::CreateCommittedResources(
         if(FAILED(hr))
         {
             break;
+        }
+        if(pStats != NULL)
+        {
+            const UINT64 resourceSize = ppAllocations[resIndex]->GetSize();
+            pStats->BlockCount++;
+            pStats->SumSizeInBytes += resourceSize;
+            pStats->UsedBytes += resourceSize;
         }
     }
     if(FAILED(hr))
@@ -3201,6 +3223,10 @@ HRESULT AllocatorPimpl::CreateCommittedResources(
                 ((ID3D12Resource*)ppvResources[resIndex])->Release();
             }
             ppvResources[resIndex] = NULL;
+        }
+        if(pStats != NULL)
+        {
+            ZeroMemory(pStats, sizeof(*pStats));
         }
     }
     return hr;
@@ -3551,7 +3577,8 @@ HRESULT Allocator::CreateAliasingResources(
     UINT NumInterferences,
     const ResourceInterference* pInterferences,
     Allocation** ppAllocations,
-    void** ppvResources)
+    void** ppvResources,
+    AliasingStats* pStats)
 {
     if(NumResources > 0)
     {
@@ -3577,7 +3604,10 @@ HRESULT Allocator::CreateAliasingResources(
     }
     
     D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
-    return m_Pimpl->CreateAliasingResources(pAllocDesc, NumResources, pResourceDescs, pInitialResourceStates, ppOptimizedClearValues, NumInterferences, pInterferences, ppAllocations, ppvResources);
+    return m_Pimpl->CreateAliasingResources(
+        pAllocDesc, NumResources, pResourceDescs, pInitialResourceStates,
+        ppOptimizedClearValues, NumInterferences, pInterferences, ppAllocations,
+        ppvResources, pStats);
 }
 
 HRESULT Allocator::GetAliasingBarriers(

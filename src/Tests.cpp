@@ -410,6 +410,7 @@ static void TestAliasing(const TestContext& ctx)
         }
         D3D12MA::Allocation* outAllocations[resourceCount] = {};
         ID3D12Resource* outResources[resourceCount] = {};
+        D3D12MA::AliasingStats stats = {};
         CHECK_HR( ctx.allocator->CreateAliasingResources(
             &allocDesc,
             resourceCount,
@@ -419,12 +420,14 @@ static void TestAliasing(const TestContext& ctx)
             0, // NumInterferences
             NULL, // pInterferences
             outAllocations,
-            (void**)outResources) );
+            (void**)outResources,
+            &stats) );
         for(UINT i = 0; i < resourceCount; ++i)
         {
             resources[i].allocation.reset(outAllocations[i]);
             resources[i].resource.p = outResources[i];
         }
+        CHECK_BOOL(stats.SumSizeInBytes == smallBufSize * smallBufCount + bigBufSize);
     }
 
 }
