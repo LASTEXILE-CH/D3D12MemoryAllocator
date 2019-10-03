@@ -412,6 +412,9 @@ Allocator::CreateResource.
 
 The object remembers size and some other information.
 To retrieve this information, use methods of this class.
+
+The object also remembers `ID3D12Resource` and "owns" a reference to it,
+so it calls `Release()` on the resource when destroyed.
 */
 class Allocation
 {
@@ -434,6 +437,12 @@ public:
     Works also with committed resources.
     */
     UINT64 GetSize() const { return m_Size; }
+
+    /** \brief Returns D3D12 resource associated with this object.
+
+    Calling this method doesn't increment resource's reference counter.
+    */
+    ID3D12Resource* GetResource() const { return m_Resource; }
 
     /** \brief Returns memory heap that the resource is created in.
 
@@ -471,6 +480,7 @@ private:
         TYPE_COUNT
     } m_Type;
     UINT64 m_Size;
+    ID3D12Resource* m_Resource;
     wchar_t* m_Name;
 
     union
@@ -491,6 +501,7 @@ private:
     ~Allocation();
     void InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType);
     void InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, DeviceMemoryBlock* block);
+    void SetResource(ID3D12Resource* resource);
     DeviceMemoryBlock* GetBlock();
     void FreeName();
 
@@ -618,8 +629,22 @@ public:
     existing memory heap to the new resource, which is the main purpose of this
     whole library.
 
-    Two objects are created and returned: allocation and resource. You need to
-    destroy them both.
+    If `ppvResource` is null, you receive only `ppAllocation` object from this function.
+    It holds pointer to `ID3D12Resource` that can be queried using function D3D12::Allocation::GetResource().
+    Reference count of the resource object is 1.
+    It is automatically destroyed when you destroy the allocation object.
+
+    If 'ppvResource` is not null, you receive pointer to the resource next to allocation object.
+    Reference count of the resource object is then 2, so you need to manually `Release` it
+    along with the allocation.
+
+    \param pAllocDesc   Parameters of the allocation.
+    \param pResourceDesc   Description of created resource.
+    \param InitialResourceState   Initial resource state.
+    \param pOptimizedClearValue   Optional. Either null or optimized clear value.
+    \param[out] ppAllocation   Filled with pointer to new allocation object created.
+    \param riidResource   IID of a resource to be created. Must be `__uuidof(ID3D12Resource)`.
+    \param[out] ppvResource   Optional. If not null, filled with pointer to new resouce created.
     */
     HRESULT CreateResource(
         const ALLOCATION_DESC* pAllocDesc,
@@ -667,7 +692,6 @@ public:
         UINT NumInterferences,
         const ResourceInterference* pInterferences,
         Allocation** ppAllocations,
-        const IID* piidResources,
         void** ppResources);
 
     /** \brief Returns array of aliasing barriers to be issued before use of specific resources.
