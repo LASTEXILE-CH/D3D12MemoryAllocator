@@ -681,6 +681,10 @@ public:
     may be used at the same time. If `NumInterferences` is 0, all created resources can
     be placed in the same region of memory.
 
+    Created resources can be released any time and in any order. There is no possibility
+    to create new resources later that would alias with existing ones. They all need to
+    be created with a single call to this function.
+
     The algorithm for for resource placement is linear and pretty simple. It doesn't try
     to figure out optimal layout of created resources out of all possibilities. If you are
     not happy with their placement, try to change their order in the input arrays.
