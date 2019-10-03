@@ -649,7 +649,7 @@ public:
 
     \param pAllocDesc   Description of allocation, common for all created resources.
     \param NumResources   Number of resources to create.
-    \param ppResourceDescs   Array of description of created resources. Must have `NumResources` elements.
+    \param pResourceDescs   Array of description of created resources. Must have `NumResources` elements.
     \param pInitialResourceStates   Array of initial states of created resources. Must have `NumResources` elements.
     \param ppOptimizedClearValues   Either null or array of optimized clear values for created resources. If not null, must have `NumResources` elements.
     \param NumInterferences   Number of interferences between resources.
@@ -661,7 +661,7 @@ public:
     HRESULT CreateAliasingResources(
         const ALLOCATION_DESC* pAllocDesc,
         UINT NumResources,
-        const D3D12_RESOURCE_DESC* ppResourceDescs,
+        const D3D12_RESOURCE_DESC* pResourceDescs,
         const D3D12_RESOURCE_STATES* pInitialResourceStates,
         const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
         UINT NumInterferences,

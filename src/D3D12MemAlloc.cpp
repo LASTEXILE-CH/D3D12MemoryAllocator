@@ -1504,6 +1504,58 @@ private:
     D3D12MA_CLASS_NO_COPY(BlockMetadata_Generic)
 };
 
+class BlockMetadata_Aliasing : public BlockMetadata
+{
+public:
+    BlockMetadata_Aliasing(const ALLOCATION_CALLBACKS* allocationCallbacks);
+    virtual ~BlockMetadata_Aliasing();
+    virtual void Init(
+        ID3D12Device* device,
+        UINT NumResources,
+        const D3D12_RESOURCE_DESC* pResourceDescs,
+        const D3D12_RESOURCE_STATES* pInitialResourceStates,
+        const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
+        UINT NumInterferences,
+        const ResourceInterference* pInterferences,
+        Allocation** ppAllocations,
+        const IID* piidResources,
+        void** ppResources);
+
+    virtual bool Validate() const;
+    virtual size_t GetAllocationCount() const;
+    virtual UINT64 GetSumFreeSize() const;
+    virtual UINT64 GetUnusedRangeSizeMax() const;
+    virtual bool IsEmpty() const;
+
+    virtual bool CreateAllocationRequest(
+        UINT64 allocSize,
+        UINT64 allocAlignment,
+        AllocationRequest* pAllocationRequest)
+    {
+        // Cannot make new allocations out of aliasing block.
+        return false;
+    }
+
+    virtual void Alloc(
+        const AllocationRequest& request,
+        UINT64 allocSize,
+        Allocation* hAllocation)
+    {
+        // Should never be called.
+        D3D12MA_ASSERT(false);
+    }
+
+    virtual void Free(const Allocation* allocation);
+    virtual void FreeAtOffset(UINT64 offset);
+
+    virtual void CalcAllocationStatInfo(StatInfo& outInfo) const;
+
+private:
+
+
+    D3D12MA_CLASS_NO_COPY(BlockMetadata_Aliasing)
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // Private class DeviceMemoryBlock definition
 
@@ -1671,7 +1723,7 @@ public:
     HRESULT CreateAliasingResources(
         const ALLOCATION_DESC* pAllocDesc,
         UINT NumResources,
-        const D3D12_RESOURCE_DESC* ppResourceDescs,
+        const D3D12_RESOURCE_DESC* pResourceDescs,
         const D3D12_RESOURCE_STATES* pInitialResourceStates,
         const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
         UINT NumInterferences,
@@ -1733,7 +1785,7 @@ private:
     HRESULT CreateCommittedResources(
         const ALLOCATION_DESC* pAllocDesc,
         UINT NumResources,
-        const D3D12_RESOURCE_DESC* ppResourceDescs,
+        const D3D12_RESOURCE_DESC* pResourceDescs,
         const D3D12_RESOURCE_STATES* pInitialResourceStates,
         const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
         Allocation** ppAllocations,
@@ -2274,6 +2326,98 @@ void BlockMetadata_Generic::CalcAllocationStatInfo(StatInfo& outInfo) const
             outInfo.AllocationSizeMax = D3D12MA_MAX(suballoc.size, outInfo.AllocationSizeMax);
         }
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class BlockMetadata_Aliasing implementation
+
+BlockMetadata_Aliasing::BlockMetadata_Aliasing(const ALLOCATION_CALLBACKS* allocationCallbacks) :
+    BlockMetadata(allocationCallbacks)
+{
+}
+
+BlockMetadata_Aliasing::~BlockMetadata_Aliasing()
+{
+}
+
+void BlockMetadata_Aliasing::Init(
+    ID3D12Device* device,
+    UINT NumResources,
+    const D3D12_RESOURCE_DESC* pResourceDescs,
+    const D3D12_RESOURCE_STATES* pInitialResourceStates,
+    const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
+    UINT NumInterferences,
+    const ResourceInterference* pInterferences,
+    Allocation** ppAllocations,
+    const IID* piidResources,
+    void** ppResources)
+{
+    D3D12MA_ASSERT(NumResources > 0);
+
+    struct ResInfo
+    {
+        D3D12_RESOURCE_ALLOCATION_INFO allocInfo;
+        UINT64 offset;
+    };
+    Vector<ResInfo> resInfos(NumResources, *GetAllocs());
+    ZeroMemory(resInfos.data(), NumResources * sizeof(ResInfo));
+    UINT64 size = 0;
+    for(UINT i = 0; i < NumResources; ++i)
+    {
+        resInfos[i].allocInfo = device->GetResourceAllocationInfo(0, 1, &pResourceDescs[i]);
+        resInfos[i].allocInfo.Alignment = D3D12MA_MAX<UINT64>(resInfos[i].allocInfo.Alignment, D3D12MA_DEBUG_ALIGNMENT);
+        D3D12MA_ASSERT(IsPow2(resInfos[i].allocInfo.Alignment));
+        D3D12MA_ASSERT(resInfos[i].allocInfo.SizeInBytes > 0);
+        resInfos[i].offset = AlignUp(size, resInfos[i].allocInfo.Alignment);
+        size = resInfos[i].offset + resInfos[i].allocInfo.SizeInBytes;
+    }
+
+    BlockMetadata::Init(size);
+}
+
+bool BlockMetadata_Aliasing::Validate() const
+{
+    // TODO
+    return true;
+}
+
+size_t BlockMetadata_Aliasing::GetAllocationCount() const
+{
+    // TODO
+    return 0;
+}
+
+UINT64 BlockMetadata_Aliasing::GetSumFreeSize() const
+{
+    // TODO
+    return 0;
+}
+
+UINT64 BlockMetadata_Aliasing::GetUnusedRangeSizeMax() const
+{
+    // TODO
+    return 0;
+}
+
+bool BlockMetadata_Aliasing::IsEmpty() const
+{
+    // TODO
+    return true;
+}
+
+void BlockMetadata_Aliasing::Free(const Allocation* allocation)
+{
+    // TODO
+}
+
+void BlockMetadata_Aliasing::FreeAtOffset(UINT64 offset)
+{
+    // TODO
+}
+
+void BlockMetadata_Aliasing::CalcAllocationStatInfo(StatInfo& outInfo) const
+{
+    // TODO
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2901,7 +3045,7 @@ HRESULT AllocatorPimpl::CreateResource(
 HRESULT AllocatorPimpl::CreateAliasingResources(
     const ALLOCATION_DESC* pAllocDesc,
     UINT NumResources,
-    const D3D12_RESOURCE_DESC* ppResourceDescs,
+    const D3D12_RESOURCE_DESC* pResourceDescs,
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
     UINT NumInterferences,
@@ -2921,12 +3065,12 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
         return E_OUTOFMEMORY;
     }
 
-    if((pAllocDesc->Flags & ALLOCATION_FLAG_COMMITTED) != 0)
+    if((pAllocDesc->Flags & ALLOCATION_FLAG_COMMITTED) != 0 || D3D12MA_DEBUG_ALWAYS_COMMITTED)
     {
         return CreateCommittedResources(
             pAllocDesc,
             NumResources,
-            ppResourceDescs,
+            pResourceDescs,
             pInitialResourceStates,
             ppOptimizedClearValues,
             ppAllocations,
@@ -2938,7 +3082,7 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
     return CreateCommittedResources(
         pAllocDesc,
         NumResources,
-        ppResourceDescs,
+        pResourceDescs,
         pInitialResourceStates,
         ppOptimizedClearValues,
         ppAllocations,
@@ -3011,7 +3155,7 @@ HRESULT AllocatorPimpl::AllocateCommittedMemory(
 HRESULT AllocatorPimpl::CreateCommittedResources(
     const ALLOCATION_DESC* pAllocDesc,
     UINT NumResources,
-    const D3D12_RESOURCE_DESC* ppResourceDescs,
+    const D3D12_RESOURCE_DESC* pResourceDescs,
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
     Allocation** ppAllocations,
@@ -3024,7 +3168,7 @@ HRESULT AllocatorPimpl::CreateCommittedResources(
     {
         hr = CreateResource(
             pAllocDesc,
-            &ppResourceDescs[resIndex],
+            &pResourceDescs[resIndex],
             pInitialResourceStates[resIndex],
             ppOptimizedClearValues ? ppOptimizedClearValues[resIndex] : NULL,
             &ppAllocations[resIndex],
@@ -3375,7 +3519,7 @@ void Allocator::CalculateStats(Stats* pStats)
 HRESULT Allocator::CreateAliasingResources(
     const ALLOCATION_DESC* pAllocDesc,
     UINT NumResources,
-    const D3D12_RESOURCE_DESC* ppResourceDescs,
+    const D3D12_RESOURCE_DESC* pResourceDescs,
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
     UINT NumInterferences,
@@ -3386,7 +3530,7 @@ HRESULT Allocator::CreateAliasingResources(
 {
     if(NumResources > 0)
     {
-        D3D12MA_ASSERT(pAllocDesc && ppResourceDescs && pInitialResourceStates && ppAllocations && piidResources && ppResources);
+        D3D12MA_ASSERT(pAllocDesc && pResourceDescs && pInitialResourceStates && ppAllocations && piidResources && ppResources);
         for(UINT resIndex = 0; resIndex < NumResources; ++resIndex)
         {
             ppAllocations[resIndex] = NULL;
@@ -3405,7 +3549,7 @@ HRESULT Allocator::CreateAliasingResources(
     }
     
     D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
-    return m_Pimpl->CreateAliasingResources(pAllocDesc, NumResources, ppResourceDescs, pInitialResourceStates, ppOptimizedClearValues, NumInterferences, pInterferences, ppAllocations, piidResources, ppResources);
+    return m_Pimpl->CreateAliasingResources(pAllocDesc, NumResources, pResourceDescs, pInitialResourceStates, ppOptimizedClearValues, NumInterferences, pInterferences, ppAllocations, piidResources, ppResources);
 }
 
 HRESULT Allocator::GetAliasingBarriers(
