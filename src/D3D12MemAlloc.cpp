@@ -1731,8 +1731,8 @@ public:
         void** ppvResources);
 
     HRESULT GetAliasingBarriers(
-        UINT NumResourcesAfter,
-        ID3D12Resource* pResourcesAfter,
+        UINT NumAllocationsAfter,
+        Allocation* pAllocationsAfter,
         UINT* pNumBarriers,
         D3D12_RESOURCE_BARRIER* pBarriers);
 
@@ -3094,13 +3094,13 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
 }
 
 HRESULT AllocatorPimpl::GetAliasingBarriers(
-    UINT NumResourcesAfter,
-    ID3D12Resource* pResourcesAfter,
+    UINT NumAllocationsAfter,
+    Allocation* pAllocationsAfter,
     UINT* pNumBarriers,
     D3D12_RESOURCE_BARRIER* pBarriers)
 {
     // Degenerate case.
-    if(NumResourcesAfter == 0)
+    if(NumAllocationsAfter == 0)
     {
         *pNumBarriers = 0;
         return S_FALSE;
@@ -3108,7 +3108,7 @@ HRESULT AllocatorPimpl::GetAliasingBarriers(
 
     // TODO implement proper aliasing. No need any aliasing barriers for now.
     *pNumBarriers = 0;
-    return S_OK;
+    return S_FALSE;
 }
 
 bool AllocatorPimpl::PrefersCommittedAllocation(const D3D12_RESOURCE_DESC& resourceDesc)
@@ -3581,16 +3581,16 @@ HRESULT Allocator::CreateAliasingResources(
 }
 
 HRESULT Allocator::GetAliasingBarriers(
-    UINT NumResourcesAfter,
-    ID3D12Resource* pResourcesAfter,
+    UINT NumAllocationsAfter,
+    Allocation* pAllocationsAfter,
     UINT* pNumBarriers,
     D3D12_RESOURCE_BARRIER* pBarriers)
 {
-    D3D12MA_ASSERT(pResourcesAfter || NumResourcesAfter == 0);
+    D3D12MA_ASSERT(pAllocationsAfter || NumAllocationsAfter == 0);
     D3D12MA_ASSERT(pNumBarriers);
 
     D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
-    return m_Pimpl->GetAliasingBarriers(NumResourcesAfter, pResourcesAfter, pNumBarriers, pBarriers);
+    return m_Pimpl->GetAliasingBarriers(NumAllocationsAfter, pAllocationsAfter, pNumBarriers, pBarriers);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

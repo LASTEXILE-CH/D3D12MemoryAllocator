@@ -702,7 +702,7 @@ public:
         Allocation** ppAllocations,
         void** ppvResources);
 
-    /** \brief Returns array of aliasing barriers to be issued before use of specific resources.
+    /** \brief Returns array of aliasing barriers to be issued before use of specific allocations.
 
     The function can work in two modes:
 
@@ -711,17 +711,22 @@ public:
     - If `pBarriers` is not null, it must point to an array. `pNumBarriers` is input-output
       parameter. On input it means capacity of the array. It is set to number of elements
       written.
+    
+    Returns `S_OK` if some barriers were found, `S_FALSE` if number of barriers to issue is 0.
 
     All returned barriers are of type `D3D12_RESOURCE_BARRIER_TYPE_ALIASING`.
 
-    \param NumResourcesAfter   Number of resources to be used.
-    \param pResourcesAfter   Array of resources to be used. Must have `NumResourcesAfter` elements.
+    It is correct to pass allocations that were not created using D3D12::Allocator::CreateAliasingResources function.
+    Such allocations just never generate aliasing barriers.
+
+    \param NumAllocationsAfter   Number of allocations (resources) to be used.
+    \param pAllocationsAfter   Array of allocations (resources) to be used. Must have `NumAllocationsAfter` elements.
     \param[in,out] pNumBarriers   Number of barriers to be issued before use of the resources.
     \param[out] pBarriers   Either null or array of barriers to be issed before use of the resources. Filled by the function.
     */
     HRESULT GetAliasingBarriers(
-        UINT NumResourcesAfter,
-        ID3D12Resource* pResourcesAfter,
+        UINT NumAllocationsAfter,
+        Allocation* pAllocationsAfter,
         UINT* pNumBarriers,
         D3D12_RESOURCE_BARRIER* pBarriers);
 
