@@ -3078,7 +3078,9 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
         return E_OUTOFMEMORY;
     }
 
-    if((pAllocDesc->Flags & ALLOCATION_FLAG_COMMITTED) != 0 || D3D12MA_DEBUG_ALWAYS_COMMITTED)
+    if((pAllocDesc->Flags & ALLOCATION_FLAG_COMMITTED) != 0 ||
+        NumResources == 1 ||
+        D3D12MA_DEBUG_ALWAYS_COMMITTED)
     {
         return CreateCommittedResources(
             pAllocDesc,
