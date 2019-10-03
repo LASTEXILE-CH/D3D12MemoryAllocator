@@ -672,6 +672,15 @@ public:
     Currently the function always allocates a new heap or heaps for the group of created
     resources, so call with #ALLOCATION_FLAG_NEVER_ALLOCATE will fail.
 
+    If `ppvResources` is null, you receive only `ppAllocations` objects from this function.
+    They hold pointers to `ID3D12Resource` that can be queried using function D3D12::Allocation::GetResource().
+    Reference count of the resource objects is 1.
+    They are automatically destroyed when you destroy the allocation object.
+
+    If 'ppvResources` is not null, you receive pointers to the resources next to allocation objects.
+    Reference count of the resource objects is then 2, so you need to manually `Release` them
+    along with the allocations.
+
     \param pAllocDesc   Description of allocation, common for all created resources.
     \param NumResources   Number of resources to create.
     \param pResourceDescs   Array of description of created resources. Must have `NumResources` elements.
@@ -680,8 +689,7 @@ public:
     \param NumInterferences   Number of interferences between resources.
     \param pInterferences   Array of interferences between resources. Must have `NumInterferences` elements.
     \param[out] ppAllocations   Pointer to array of pointers to allocations, to be filled by this function. Must have `NumResources` elements.
-    \param piidResources   Array of IID of created resources. Must have `NumResources` elements.
-    \param[out] ppResources   Pointer to array of pointers to D3D12 resources, to be filled by this function. Must have `NumResources` elements.
+    \param[out] ppvResources   Optional. Either null or pointer to array of pointers to D3D12 resources, to be filled by this function. Must have `NumResources` elements.
     */
     HRESULT CreateAliasingResources(
         const ALLOCATION_DESC* pAllocDesc,
@@ -692,7 +700,7 @@ public:
         UINT NumInterferences,
         const ResourceInterference* pInterferences,
         Allocation** ppAllocations,
-        void** ppResources);
+        void** ppvResources);
 
     /** \brief Returns array of aliasing barriers to be issued before use of specific resources.
 

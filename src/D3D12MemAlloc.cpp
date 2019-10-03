@@ -1728,7 +1728,7 @@ public:
         UINT NumInterferences,
         const ResourceInterference* pInterferences,
         Allocation** ppAllocations,
-        void** ppResources);
+        void** ppvResources);
 
     HRESULT GetAliasingBarriers(
         UINT NumResourcesAfter,
@@ -3057,7 +3057,7 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
     UINT NumInterferences,
     const ResourceInterference* pInterferences,
     Allocation** ppAllocations,
-    void** ppResources)
+    void** ppvResources)
 {
     // Degenerate case.
     if(NumResources == 0)
@@ -3079,7 +3079,7 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
             pInitialResourceStates,
             ppOptimizedClearValues,
             ppAllocations,
-            ppResources);
+            ppvResources);
     }
 
     // TODO Implement proper aliasing.
@@ -3090,7 +3090,7 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
         pInitialResourceStates,
         ppOptimizedClearValues,
         ppAllocations,
-        ppResources);
+        ppvResources);
 }
 
 HRESULT AllocatorPimpl::GetAliasingBarriers(
@@ -3170,7 +3170,7 @@ HRESULT AllocatorPimpl::CreateCommittedResources(
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
     Allocation** ppAllocations,
-    void** ppResources)
+    void** ppvResources)
 {
     HRESULT hr = S_OK;
     UINT resIndex;
@@ -3183,7 +3183,7 @@ HRESULT AllocatorPimpl::CreateCommittedResources(
             ppOptimizedClearValues ? ppOptimizedClearValues[resIndex] : NULL,
             &ppAllocations[resIndex],
             __uuidof(ID3D12Resource),
-            &ppResources[resIndex]);
+            ppvResources ? &ppvResources[resIndex] : NULL);
         if(FAILED(hr))
         {
             break;
@@ -3196,8 +3196,11 @@ HRESULT AllocatorPimpl::CreateCommittedResources(
         {
             ppAllocations[resIndex]->Release();
             ppAllocations[resIndex] = NULL;
-            ((ID3D12Resource*)ppResources[resIndex])->Release();
-            ppResources[resIndex] = NULL;
+            if(ppvResources)
+            {
+                ((ID3D12Resource*)ppvResources[resIndex])->Release();
+            }
+            ppvResources[resIndex] = NULL;
         }
     }
     return hr;
@@ -3548,15 +3551,18 @@ HRESULT Allocator::CreateAliasingResources(
     UINT NumInterferences,
     const ResourceInterference* pInterferences,
     Allocation** ppAllocations,
-    void** ppResources)
+    void** ppvResources)
 {
     if(NumResources > 0)
     {
-        D3D12MA_ASSERT(pAllocDesc && pResourceDescs && pInitialResourceStates && ppAllocations && ppResources);
+        D3D12MA_ASSERT(pAllocDesc && pResourceDescs && pInitialResourceStates && ppAllocations);
         for(UINT resIndex = 0; resIndex < NumResources; ++resIndex)
         {
             ppAllocations[resIndex] = NULL;
-            ppResources[resIndex] = NULL;
+            if(ppvResources != NULL)
+            {
+                ppvResources[resIndex] = NULL;
+            }
         }
     }
     if(NumInterferences > 0)
@@ -3571,7 +3577,7 @@ HRESULT Allocator::CreateAliasingResources(
     }
     
     D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
-    return m_Pimpl->CreateAliasingResources(pAllocDesc, NumResources, pResourceDescs, pInitialResourceStates, ppOptimizedClearValues, NumInterferences, pInterferences, ppAllocations, ppResources);
+    return m_Pimpl->CreateAliasingResources(pAllocDesc, NumResources, pResourceDescs, pInitialResourceStates, ppOptimizedClearValues, NumInterferences, pInterferences, ppAllocations, ppvResources);
 }
 
 HRESULT Allocator::GetAliasingBarriers(
