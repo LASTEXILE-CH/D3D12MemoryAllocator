@@ -512,7 +512,6 @@ private:
     void InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, NormalBlock* block);
     void InitAliasing(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, AliasingBlock* block);
     void SetResource(ID3D12Resource* resource);
-    NormalBlock* GetBlock();
     void FreeName();
 
     D3D12MA_CLASS_NO_COPY(Allocation)
@@ -616,14 +615,10 @@ Alising successfully saving memory can be observed when `UsedBytes` < `SumSizeIn
 */
 struct AliasingStats
 {
-    /// Number of new memory blocks (heaps) created for new resources.
-    UINT BlockCount;
     /// Sum of sizes of all new resources.
     UINT64 SumSizeInBytes;
     /// Total number of bytes occupied by new allocations.
     UINT64 UsedBytes;
-    /// Total number of bytes allocated but unused.
-    UINT64 UnusedBytes;
 };
 
 /**
@@ -698,9 +693,6 @@ public:
     The algorithm for for resource placement is linear and pretty simple. It doesn't try
     to figure out optimal layout of created resources out of all possibilities. If you are
     not happy with their placement, try to change their order in the input arrays.
-
-    Currently the function always allocates a new heap or heaps for the group of created
-    resources, so call with #ALLOCATION_FLAG_NEVER_ALLOCATE will fail.
 
     If `ppvResources` is null, you receive only `ppAllocations` objects from this function.
     They hold pointers to `ID3D12Resource` that can be queried using function D3D12::Allocation::GetResource().
