@@ -2882,6 +2882,8 @@ void BlockVector::Free(Allocation* hAllocation)
     {
         D3D12MA_DELETE(m_hAllocator->GetAllocs(), pBlockToDelete);
     }
+}
+
 UINT64 BlockVector::CalcMaxBlockSize() const
 {
     UINT64 result = 0;
