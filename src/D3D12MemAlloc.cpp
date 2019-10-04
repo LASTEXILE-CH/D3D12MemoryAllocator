@@ -1577,23 +1577,23 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// Private class DeviceMemoryBlock definition
+// Private class MemoryBlock definition
 
 /*
 Represents a single block of device memory (heap).
 Base class for inheritance.
 Thread-safety: This class must be externally synchronized.
 */
-class DeviceMemoryBlock
+class MemoryBlock
 {
 public:
-    DeviceMemoryBlock(
+    MemoryBlock(
         AllocatorPimpl* allocator,
         D3D12_HEAP_TYPE heapType,
         D3D12_HEAP_FLAGS heapFlags,
         UINT64 size,
         UINT id);
-    virtual ~DeviceMemoryBlock();
+    virtual ~MemoryBlock();
     // Creates the ID3D12Heap.
     virtual HRESULT Init();
 
@@ -1613,7 +1613,7 @@ protected:
 private:
     ID3D12Heap* m_Heap = NULL;
 
-    D3D12MA_CLASS_NO_COPY(DeviceMemoryBlock)
+    D3D12MA_CLASS_NO_COPY(MemoryBlock)
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1624,7 +1624,7 @@ Represents a single block of device memory (heap) with all the data about its
 regions (aka suballocations, Allocation), assigned and free.
 Thread-safety: This class must be externally synchronized.
 */
-class NormalBlock : public DeviceMemoryBlock
+class NormalBlock : public MemoryBlock
 {
 public:
     BlockMetadata* m_pMetadata;
@@ -2464,9 +2464,9 @@ void BlockMetadata_Aliasing::CalcAllocationStatInfo(StatInfo& outInfo) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Private class DeviceMemoryBlock definition
+// Private class MemoryBlock definition
 
-DeviceMemoryBlock::DeviceMemoryBlock(
+MemoryBlock::MemoryBlock(
     AllocatorPimpl* allocator,
     D3D12_HEAP_TYPE heapType,
     D3D12_HEAP_FLAGS heapFlags,
@@ -2480,7 +2480,7 @@ DeviceMemoryBlock::DeviceMemoryBlock(
 {
 }
 
-DeviceMemoryBlock::~DeviceMemoryBlock()
+MemoryBlock::~MemoryBlock()
 {
     if(m_Heap)
     {
@@ -2488,7 +2488,7 @@ DeviceMemoryBlock::~DeviceMemoryBlock()
     }
 }
 
-HRESULT DeviceMemoryBlock::Init()
+HRESULT MemoryBlock::Init()
 {
     D3D12MA_ASSERT(m_Heap == NULL);
 
@@ -2511,7 +2511,7 @@ NormalBlock::NormalBlock(
     D3D12_HEAP_FLAGS heapFlags,
     UINT64 size,
     UINT id) :
-    DeviceMemoryBlock(allocator, heapType, heapFlags, size, id),
+    MemoryBlock(allocator, heapType, heapFlags, size, id),
     m_BlockVector(blockVector)
 {
 }
@@ -2528,7 +2528,7 @@ NormalBlock::~NormalBlock()
 
 HRESULT NormalBlock::Init()
 {
-    HRESULT hr = DeviceMemoryBlock::Init();
+    HRESULT hr = MemoryBlock::Init();
     if(FAILED(hr))
     {
         return hr;
