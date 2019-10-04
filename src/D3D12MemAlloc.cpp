@@ -1733,7 +1733,6 @@ private:
         Allocation** pAllocation);
 
     HRESULT CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex);
-    HRESULT CreateD3d12Heap(ID3D12Heap*& outHeap, UINT64 size) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2877,13 +2876,6 @@ HRESULT BlockVector::AllocateFromBlock(
 
 HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
 {
-    ID3D12Heap* heap = NULL;
-    HRESULT hr = CreateD3d12Heap(heap, blockSize);
-    if(FAILED(hr))
-    {
-        return hr;
-    }
-
     NormalBlock* const pBlock = D3D12MA_NEW(m_hAllocator->GetAllocs(), NormalBlock)(
         m_hAllocator,
         this,
@@ -2891,7 +2883,7 @@ HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
         m_HeapFlags,
         blockSize,
         m_NextBlockId++);
-    hr = pBlock->Init();
+    HRESULT hr = pBlock->Init();
     if(FAILED(hr))
     {
         D3D12MA_DELETE(m_hAllocator->GetAllocs(), pBlock);
@@ -2905,18 +2897,6 @@ HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
     }
 
     return hr;
-}
-
-HRESULT BlockVector::CreateD3d12Heap(ID3D12Heap*& outHeap, UINT64 size) const
-{
-    D3D12_HEAP_DESC heapDesc = {};
-    heapDesc.SizeInBytes = size;
-    heapDesc.Properties.Type = m_HeapType;
-    heapDesc.Alignment = HeapFlagsToAlignment(m_HeapFlags);
-    heapDesc.Flags = m_HeapFlags;
-
-    ID3D12Heap* heap = NULL;
-	return m_hAllocator->GetDevice()->CreateHeap(&heapDesc, __uuidof(*outHeap), (void**)&outHeap);
 }
 
 void BlockVector::AddStats(Stats& outStats)
