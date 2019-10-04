@@ -341,7 +341,7 @@ namespace D3D12MA
 
 /// \cond INTERNAL
 class AllocatorPimpl;
-class DeviceMemoryBlock;
+class NormalBlock;
 class BlockVector;
 /// \endcond
 
@@ -493,16 +493,16 @@ private:
         struct
         {
             UINT64 offset;
-            DeviceMemoryBlock* block;
+            NormalBlock* block;
         } m_Placed;
     };
 
     Allocation();
     ~Allocation();
     void InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType);
-    void InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, DeviceMemoryBlock* block);
+    void InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, NormalBlock* block);
     void SetResource(ID3D12Resource* resource);
-    DeviceMemoryBlock* GetBlock();
+    NormalBlock* GetBlock();
     void FreeName();
 
     D3D12MA_CLASS_NO_COPY(Allocation)
