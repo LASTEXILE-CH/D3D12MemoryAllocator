@@ -343,6 +343,7 @@ namespace D3D12MA
 class AllocatorPimpl;
 class NormalBlock;
 class BlockVector;
+class AliasingBlock;
 /// \endcond
 
 /// Pointer to custom callback function that allocates CPU memory.
@@ -470,6 +471,7 @@ public:
 private:
     friend class AllocatorPimpl;
     friend class BlockVector;
+    friend class AliasingBlock;
     template<typename T> friend void D3D12MA_DELETE(const ALLOCATION_CALLBACKS&, T*);
 
     AllocatorPimpl* m_Allocator;
@@ -477,6 +479,7 @@ private:
     {
         TYPE_COMMITTED,
         TYPE_PLACED,
+        TYPE_ALIASING,
         TYPE_COUNT
     } m_Type;
     UINT64 m_Size;
@@ -495,12 +498,19 @@ private:
             UINT64 offset;
             NormalBlock* block;
         } m_Placed;
+
+        struct
+        {
+            UINT64 offset;
+            AliasingBlock* block;
+        } m_Aliasing;
     };
 
     Allocation();
     ~Allocation();
     void InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType);
     void InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, NormalBlock* block);
+    void InitAliasing(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, AliasingBlock* block);
     void SetResource(ID3D12Resource* resource);
     NormalBlock* GetBlock();
     void FreeName();
