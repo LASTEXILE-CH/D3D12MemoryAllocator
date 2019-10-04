@@ -1529,6 +1529,24 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// Private class AliasingInterferenceMatrix definition
+
+class ResourceInterferenceMatrix
+{
+public:
+    // interferences array must remain alive and unchanged for the lifetime of this object.
+    void Init(UINT count, const ResourceInterference* interferences);
+
+    bool Interferes(UINT resourceIndex1, UINT resourceIndex2) const;
+
+private:
+    UINT m_Count = 0;
+    const ResourceInterference* m_Interferences = nullptr;
+    bool m_UseBits = false;
+    UINT64 m_Bits[64] = {};
+};
+
+////////////////////////////////////////////////////////////////////////////////
 // Private class AliasingCalculator definition
 
 class AliasingCalculator
@@ -1552,14 +1570,30 @@ public:
     };
     UINT GetResourceCount() const { return m_ResourceCount; }
     UINT64 GetBlockSize() const { return m_BlockSize; }
-    const ResourceInfo& GetResourceInfo(size_t index) const { return m_ResourceInfo[index]; }
+    const ResourceInfo& GetResourceInfo(size_t inputIndex) const { return m_Items[m_InputIndexToItemIndex[inputIndex]].resInfo; }
 
 private:
     const ALLOCATION_CALLBACKS& m_Allocs;
 
     UINT m_ResourceCount = 0;
     UINT64 m_BlockSize = 0;
-    Vector<ResourceInfo> m_ResourceInfo;
+
+    struct Item
+    {
+        ResourceInfo resInfo;
+        UINT inputIndex;
+    };
+    struct ItemOffsetLess
+    {
+        bool operator()(const Item& lhs, const Item& rhs) const { return lhs.resInfo.offset < rhs.resInfo.offset; }
+    };
+    // Sorted by resInfo.offset ascending.
+    Vector<Item> m_Items;
+    // Index to this array is input index (to arrays passed to Calculate), value is index to m_Items.
+    Vector<UINT> m_InputIndexToItemIndex;
+
+    bool FindInterference(UINT64 offset, UINT64 size, UINT inputIndex,
+        const ResourceInterferenceMatrix& interferenceMatrix, UINT& outInterferingItemIndex) const;
 
     D3D12MA_CLASS_NO_COPY(AliasingCalculator)
 };
@@ -2595,11 +2629,75 @@ void AliasingBlock::ReleaseAllocations()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Private class ResourceInterferenceMatrix definition
+
+void ResourceInterferenceMatrix::Init(UINT count, const ResourceInterference* interferences)
+{
+    m_Count = count;
+    m_Interferences = interferences;
+
+    if(count == 0)
+    {
+        m_UseBits = true;
+        return;
+    }
+
+    UINT maxResourceIndex = 0;
+    for(UINT interIndex = 0; interIndex < count; ++interIndex)
+    {
+        const ResourceInterference inter = interferences[interIndex];
+        maxResourceIndex = D3D12MA_MAX(maxResourceIndex, inter.ResourceIndex1);
+        maxResourceIndex = D3D12MA_MAX(maxResourceIndex, inter.ResourceIndex2);
+    }
+
+    m_UseBits = maxResourceIndex < 64;
+
+    if(m_UseBits)
+    {
+        for(UINT interIndex = 0; interIndex < count; ++interIndex)
+        {
+            const ResourceInterference inter = interferences[interIndex];
+            m_Bits[inter.ResourceIndex1] |= 1ull << inter.ResourceIndex2;
+            m_Bits[inter.ResourceIndex2] |= 1ull << inter.ResourceIndex1;
+        }
+    }
+}
+
+bool ResourceInterferenceMatrix::Interferes(UINT resourceIndex1, UINT resourceIndex2) const
+{
+    if(m_UseBits)
+    {
+        if(resourceIndex1 < 64 && resourceIndex2 < 64)
+        {
+            return ((m_Bits[resourceIndex1] >> resourceIndex2) & 1) != 0;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        for(UINT i = 0; i < m_Count; ++i)
+        {
+            const ResourceInterference inter = m_Interferences[i];
+            if(inter.ResourceIndex1 == resourceIndex1 && inter.ResourceIndex2 == resourceIndex2 ||
+                inter.ResourceIndex1 == resourceIndex2 && inter.ResourceIndex2 == resourceIndex1)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Private class AliasingCalculator definition
 
 AliasingCalculator::AliasingCalculator(const ALLOCATION_CALLBACKS& allocs) :
     m_Allocs(allocs),
-    m_ResourceInfo(allocs)
+    m_Items(allocs),
+    m_InputIndexToItemIndex(allocs)
 {
 }
 
@@ -2622,22 +2720,49 @@ HRESULT AliasingCalculator::Calculate(
         return S_FALSE;
     }
 
-    m_ResourceInfo.resize(numResources);
+    ResourceInterferenceMatrix interferenceMatrix;
+    interferenceMatrix.Init(numInterferences, interferences);
 
-    ZeroMemory(m_ResourceInfo.data(), numResources * sizeof(ResourceInfo));
-    for(UINT i = 0; i < numResources; ++i)
+    m_Items.reserve(numResources);
+    m_InputIndexToItemIndex.resize(numResources);
+
+    for(UINT inputIndex = 0; inputIndex < numResources; ++inputIndex)
     {
-        m_ResourceInfo[i].allocInfo = device->GetResourceAllocationInfo(0, 1, &resourceDescs[i]);
-        m_ResourceInfo[i].allocInfo.Alignment = D3D12MA_MAX<UINT64>(m_ResourceInfo[i].allocInfo.Alignment, D3D12MA_DEBUG_ALIGNMENT);
-        D3D12MA_ASSERT(IsPow2(m_ResourceInfo[i].allocInfo.Alignment));
-        D3D12MA_ASSERT(m_ResourceInfo[i].allocInfo.SizeInBytes > 0);
-        m_ResourceInfo[i].offset = AlignUp(m_BlockSize, m_ResourceInfo[i].allocInfo.Alignment);
-        m_BlockSize = m_ResourceInfo[i].offset + m_ResourceInfo[i].allocInfo.SizeInBytes;
+        Item item;
+        
+        item.inputIndex = inputIndex;
+        
+        item.resInfo.allocInfo = device->GetResourceAllocationInfo(0, 1, &resourceDescs[inputIndex]);
+        item.resInfo.allocInfo.Alignment = D3D12MA_MAX<UINT64>(item.resInfo.allocInfo.Alignment, D3D12MA_DEBUG_ALIGNMENT);
+        D3D12MA_ASSERT(IsPow2(item.resInfo.allocInfo.Alignment));
+        D3D12MA_ASSERT(item.resInfo.allocInfo.SizeInBytes > 0);
+        
+        item.resInfo.offset = 0;
 
+        UINT interferingItemIndex = 0;
+        while(FindInterference(
+            item.resInfo.offset, item.resInfo.allocInfo.SizeInBytes, inputIndex,
+            interferenceMatrix, interferingItemIndex))
+        {
+            const Item& interferingItem = m_Items[interferingItemIndex];
+            item.resInfo.offset = interferingItem.resInfo.offset + interferingItem.resInfo.allocInfo.SizeInBytes;
+            item.resInfo.offset = AlignUp(item.resInfo.offset, item.resInfo.allocInfo.Alignment);
+        }
+        
         if(outStats)
         {
-            outStats->SumSizeInBytes += m_ResourceInfo[i].allocInfo.SizeInBytes;
+            outStats->SumSizeInBytes += item.resInfo.allocInfo.SizeInBytes;
         }
+
+        m_BlockSize = D3D12MA_MAX(m_BlockSize, item.resInfo.offset + item.resInfo.allocInfo.SizeInBytes);
+
+        m_Items.InsertSorted(item, ItemOffsetLess());
+    }
+
+    for(UINT itemIndex = 0; itemIndex < numResources; ++itemIndex)
+    {
+        const UINT inputIndex = m_Items[itemIndex].inputIndex;
+        m_InputIndexToItemIndex[inputIndex] = itemIndex;
     }
 
     if(outStats)
@@ -2646,6 +2771,30 @@ HRESULT AliasingCalculator::Calculate(
     }
 
     return S_OK;
+}
+
+bool AliasingCalculator::FindInterference(UINT64 offset, UINT64 size, UINT inputIndex,
+    const ResourceInterferenceMatrix& interferenceMatrix, UINT& outInterferingItemIndex) const
+{
+    const UINT64 offsetEnd = offset + size;
+    for(UINT itemIndex = 0, itemCount = (UINT)m_Items.size(); itemIndex < itemCount; ++itemIndex)
+    {
+        const Item& item = m_Items[itemIndex];
+        
+        // They are sorted, so after finding one that begins later than the end of offset + size we can break.
+        if(item.resInfo.offset >= offsetEnd)
+        {
+            return false;
+        }
+        
+        const bool overlaps = item.resInfo.offset + item.resInfo.allocInfo.SizeInBytes > offset;
+        if(overlaps && interferenceMatrix.Interferes(inputIndex, item.inputIndex))
+        {
+            outInterferingItemIndex = itemIndex;
+            return true;
+        }
+    }
+    return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3274,34 +3423,34 @@ HRESULT AllocatorPimpl::CreateAliasingResources(
             pStats);
     }
 
-    bool hasBuffer = false, hasRtDsTexture = false, hasOtherTexture = false;
+    size_t bufferCount = 0, rtDsTextureCount = 0, otherTextureCount = 0;
     for(UINT i = 0; i < NumResources; ++i)
     {
         if(pResourceDescs[i].Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
         {
-            hasBuffer = true;
+            ++bufferCount;
         }
         else
         {
             if((pResourceDescs[i].Flags &
                 D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET || D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) != 0)
             {
-                hasRtDsTexture = true;
+                ++rtDsTextureCount;
             }
             else
             {
-                hasOtherTexture = true;
+                ++otherTextureCount;
             }
         }
     }
     const UINT8 resourceTypeCount =
-        (hasBuffer ? 1 : 0) + (hasRtDsTexture ? 1 : 0) + (hasOtherTexture ? 1 : 0);
+        (bufferCount > 0 ? 1 : 0) + (rtDsTextureCount > 0 ? 1 : 0) + (otherTextureCount > 0 ? 1 : 0);
 
     D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
     if(resourceTypeCount == 1)
     {
-        if(hasBuffer) heapFlags = D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES | D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES;
-        else if(hasRtDsTexture) heapFlags = D3D12_HEAP_FLAG_DENY_BUFFERS | D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES;
+        if(bufferCount > 0) heapFlags = D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES | D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES;
+        else if(rtDsTextureCount > 0) heapFlags = D3D12_HEAP_FLAG_DENY_BUFFERS | D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES;
         else heapFlags = D3D12_HEAP_FLAG_DENY_BUFFERS | D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES;
     }
     else

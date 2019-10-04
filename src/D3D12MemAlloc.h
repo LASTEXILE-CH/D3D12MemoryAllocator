@@ -690,7 +690,7 @@ public:
     to create new resources later that would alias with existing ones. They all need to
     be created with a single call to this function.
 
-    The algorithm for for resource placement is linear and pretty simple. It doesn't try
+    The algorithm for for resource placement is pretty simple. It doesn't try
     to figure out optimal layout of created resources out of all possibilities. If you are
     not happy with their placement, try to change their order in the input arrays.
 
