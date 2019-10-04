@@ -1525,65 +1525,6 @@ private:
     D3D12MA_CLASS_NO_COPY(BlockMetadata_Generic)
 };
 
-class AliasingBlock
-{
-public:
-    AliasingBlock(
-        AllocatorPimpl* allocator,
-        D3D12_HEAP_TYPE heapType,
-        D3D12_HEAP_FLAGS heapFlags);
-    ~AliasingBlock();
-    HRESULT Init(
-        ID3D12Device* device,
-        UINT NumResources,
-        const D3D12_RESOURCE_DESC* pResourceDescs,
-        const D3D12_RESOURCE_STATES* pInitialResourceStates,
-        const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
-        UINT NumInterferences,
-        const ResourceInterference* pInterferences,
-        Allocation** outAllocations);
-
-    ID3D12Heap* GetHeap() const { return m_Heap; }
-    
-    // Unregisters allocation from this block. Thread-safe.
-    // Returns true if block became empty.
-    bool Free(Allocation* alloc);
-    
-private:
-    AllocatorPimpl* const m_Allocator;
-    const D3D12_HEAP_TYPE m_HeapType;
-    const D3D12_HEAP_FLAGS m_HeapFlags;
-
-    struct Item
-    {
-        D3D12_RESOURCE_ALLOCATION_INFO allocInfo = {};
-        UINT64 offset = UINT64_MAX;
-        Allocation* allocation = nullptr;
-    };
-    D3D12MA_MUTEX m_Mutex;
-    UINT64 m_Size = 0;
-    Vector<Item> m_Items;
-    ID3D12Heap* m_Heap = NULL;
-
-    // Calculates resource sizes, offsets, initializes internal data structure.
-    void CalculateItems(
-        ID3D12Device* device,
-        UINT NumResources,
-        const D3D12_RESOURCE_DESC* pResourceDescs,
-        UINT NumInterferences,
-        const ResourceInterference* pInterferences);
-    HRESULT CreateD3dHeap(ID3D12Device* device);
-    HRESULT CreatePlacedResources(
-        ID3D12Device* device,
-        UINT NumResources,
-        const D3D12_RESOURCE_DESC* pResourceDescs,
-        const D3D12_RESOURCE_STATES* pInitialResourceStates,
-        const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues);
-    void ReleaseAllocations();
-
-    D3D12MA_CLASS_NO_COPY(AliasingBlock)
-};
-
 ////////////////////////////////////////////////////////////////////////////////
 // Private class MemoryBlock definition
 
@@ -1599,11 +1540,10 @@ public:
         AllocatorPimpl* allocator,
         D3D12_HEAP_TYPE heapType,
         D3D12_HEAP_FLAGS heapFlags,
-        UINT64 size,
         UINT id);
     virtual ~MemoryBlock();
     // Creates the ID3D12Heap.
-    virtual HRESULT Init();
+    virtual HRESULT Init(UINT64 size);
 
     D3D12_HEAP_TYPE GetHeapType() const { return m_HeapType; }
     D3D12_HEAP_FLAGS GetHeapFlags() const { return m_HeapFlags; }
@@ -1615,10 +1555,10 @@ protected:
     AllocatorPimpl* const m_Allocator;
     const D3D12_HEAP_TYPE m_HeapType;
     const D3D12_HEAP_FLAGS m_HeapFlags;
-    const UINT64 m_Size;
     const UINT m_Id;
 
 private:
+    UINT64 m_Size = 0;
     ID3D12Heap* m_Heap = NULL;
 
     D3D12MA_CLASS_NO_COPY(MemoryBlock)
@@ -1642,11 +1582,10 @@ public:
         BlockVector* blockVector,
         D3D12_HEAP_TYPE heapType,
         D3D12_HEAP_FLAGS heapFlags,
-        UINT64 size,
         UINT id);
     virtual ~NormalBlock();
     // Always call after construction.
-    virtual HRESULT Init();
+    virtual HRESULT Init(UINT64 size);
 
     BlockVector* GetBlockVector() const { return m_BlockVector; }
 
@@ -1658,6 +1597,60 @@ private:
 
     D3D12MA_CLASS_NO_COPY(NormalBlock)
 };
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class AliasingBlock definition
+
+class AliasingBlock : public MemoryBlock
+{
+public:
+    AliasingBlock(
+        AllocatorPimpl* allocator,
+        D3D12_HEAP_TYPE heapType,
+        D3D12_HEAP_FLAGS heapFlags,
+        UINT id);
+    virtual ~AliasingBlock();
+    HRESULT Init(
+        UINT NumResources,
+        const D3D12_RESOURCE_DESC* pResourceDescs,
+        const D3D12_RESOURCE_STATES* pInitialResourceStates,
+        const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues,
+        UINT NumInterferences,
+        const ResourceInterference* pInterferences,
+        Allocation** outAllocations);
+
+    // Unregisters allocation from this block. Thread-safe.
+    // Returns true if block became empty.
+    bool Free(Allocation* alloc);
+
+private:
+    struct Item
+    {
+        D3D12_RESOURCE_ALLOCATION_INFO allocInfo = {};
+        UINT64 offset = UINT64_MAX;
+        Allocation* allocation = nullptr;
+    };
+    D3D12MA_MUTEX m_Mutex;
+    UINT64 m_Size = 0;
+    Vector<Item> m_Items;
+
+    // Calculates resource sizes, offsets, initializes internal data structure.
+    void CalculateItems(
+        UINT NumResources,
+        const D3D12_RESOURCE_DESC* pResourceDescs,
+        UINT NumInterferences,
+        const ResourceInterference* pInterferences,
+        UINT64& outSize);
+    HRESULT CreatePlacedResources(
+        UINT NumResources,
+        const D3D12_RESOURCE_DESC* pResourceDescs,
+        const D3D12_RESOURCE_STATES* pInitialResourceStates,
+        const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues);
+    void ReleaseAllocations();
+
+    D3D12MA_CLASS_NO_COPY(AliasingBlock)
+};
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private class BlockVector definition
@@ -2383,15 +2376,61 @@ void BlockMetadata_Generic::CalcAllocationStatInfo(StatInfo& outInfo) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Private class NormalBlock implementation
+
+NormalBlock::NormalBlock(
+    AllocatorPimpl* allocator,
+    BlockVector* blockVector,
+    D3D12_HEAP_TYPE heapType,
+    D3D12_HEAP_FLAGS heapFlags,
+    UINT id) :
+    MemoryBlock(allocator, heapType, heapFlags, id),
+    m_BlockVector(blockVector)
+{
+}
+
+NormalBlock::~NormalBlock()
+{
+    // THIS IS THE MOST IMPORTANT ASSERT IN THE ENTIRE LIBRARY!
+    // Hitting it means you have some memory leak - unreleased Allocation objects.
+    D3D12MA_ASSERT(m_pMetadata->IsEmpty() && "Some allocations were not freed before destruction of this memory block!");
+
+    D3D12MA_DELETE(m_Allocator->GetAllocs(), m_pMetadata);
+    m_pMetadata = NULL;
+}
+
+HRESULT NormalBlock::Init(UINT64 size)
+{
+    HRESULT hr = MemoryBlock::Init(size);
+    if(FAILED(hr))
+    {
+        return hr;
+    }
+    
+    m_pMetadata = D3D12MA_NEW(m_Allocator->GetAllocs(), BlockMetadata_Generic)(&m_Allocator->GetAllocs());
+    m_pMetadata->Init(size);
+
+    return hr;
+}
+
+bool NormalBlock::Validate() const
+{
+    D3D12MA_VALIDATE(GetHeap() &&
+        m_pMetadata &&
+        m_pMetadata->GetSize() != 0 &&
+        m_pMetadata->GetSize() == GetSize());
+    return m_pMetadata->Validate();
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Private class AliasingBlock implementation
 
 AliasingBlock::AliasingBlock(
     AllocatorPimpl* allocator,
     D3D12_HEAP_TYPE heapType,
-    D3D12_HEAP_FLAGS heapFlags) :
-    m_Allocator(allocator),
-    m_HeapType(heapType),
-    m_HeapFlags(heapFlags),
+    D3D12_HEAP_FLAGS heapFlags,
+    UINT id) :
+    MemoryBlock(allocator, heapType, heapFlags, id),
     m_Items(allocator->GetAllocs())
 {
 }
@@ -2401,15 +2440,9 @@ AliasingBlock::~AliasingBlock()
     // THIS IS AN IMPORTANT ASSERT!
     // Hitting it means you have some memory leak - unreleased Allocation objects.
     D3D12MA_ASSERT(m_Items.empty() && "Some aliasing allocations were not freed before destruction of this memory block!");
-
-    if(m_Heap)
-    {
-        m_Heap->Release();
-    }
 }
 
 HRESULT AliasingBlock::Init(
-    ID3D12Device* device,
     UINT NumResources,
     const D3D12_RESOURCE_DESC* pResourceDescs,
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
@@ -2418,15 +2451,16 @@ HRESULT AliasingBlock::Init(
     const ResourceInterference* pInterferences,
     Allocation** outAllocations)
 {
-    CalculateItems(device, NumResources, pResourceDescs, NumInterferences, pInterferences);
-    
+    UINT64 size = 0;
+    CalculateItems(NumResources, pResourceDescs, NumInterferences, pInterferences, size);
+
     // m_Items are in the order as in input arrays now.
 
-    HRESULT hr = CreateD3dHeap(device);
+    HRESULT hr = MemoryBlock::Init(size);
 
     if(SUCCEEDED(hr))
     {
-        hr = CreatePlacedResources(device, NumResources, pResourceDescs, pInitialResourceStates, ppOptimizedClearValues);
+        hr = CreatePlacedResources(NumResources, pResourceDescs, pInitialResourceStates, ppOptimizedClearValues);
     }
 
     if(SUCCEEDED(hr))
@@ -2464,54 +2498,43 @@ bool AliasingBlock::Free(Allocation* alloc)
 }
 
 void AliasingBlock::CalculateItems(
-    ID3D12Device* device,
     UINT NumResources,
     const D3D12_RESOURCE_DESC* pResourceDescs,
     UINT NumInterferences,
-    const ResourceInterference* pInterferences)
+    const ResourceInterference* pInterferences,
+    UINT64& outSize)
 {
+    ID3D12Device* device = m_Allocator->GetDevice();
     D3D12MA_ASSERT(NumResources > 0);
     m_Items.resize(NumResources);
     ZeroMemory(m_Items.data(), NumResources * sizeof(Item));
+    outSize = 0;
     for(UINT i = 0; i < NumResources; ++i)
     {
         m_Items[i].allocInfo = device->GetResourceAllocationInfo(0, 1, &pResourceDescs[i]);
         m_Items[i].allocInfo.Alignment = D3D12MA_MAX<UINT64>(m_Items[i].allocInfo.Alignment, D3D12MA_DEBUG_ALIGNMENT);
         D3D12MA_ASSERT(IsPow2(m_Items[i].allocInfo.Alignment));
         D3D12MA_ASSERT(m_Items[i].allocInfo.SizeInBytes > 0);
-        m_Items[i].offset = AlignUp(m_Size, m_Items[i].allocInfo.Alignment);
-        m_Size = m_Items[i].offset + m_Items[i].allocInfo.SizeInBytes;
+        m_Items[i].offset = AlignUp(outSize, m_Items[i].allocInfo.Alignment);
+        outSize = m_Items[i].offset + m_Items[i].allocInfo.SizeInBytes;
     }
 }
 
-HRESULT AliasingBlock::CreateD3dHeap(ID3D12Device* device)
-{
-    D3D12MA_ASSERT(m_Size > 0);
-
-    D3D12_HEAP_DESC heapDesc = {};
-    heapDesc.SizeInBytes = m_Size;
-    heapDesc.Properties.Type = m_HeapType;
-    heapDesc.Alignment = HeapFlagsToAlignment(m_HeapFlags);
-    heapDesc.Flags = m_HeapFlags;
-
-    ID3D12Heap* heap = NULL;
-    return device->CreateHeap(&heapDesc, __uuidof(*m_Heap), (void**)&m_Heap);
-}
-
 HRESULT AliasingBlock::CreatePlacedResources(
-    ID3D12Device* device,
     UINT NumResources,
     const D3D12_RESOURCE_DESC* pResourceDescs,
     const D3D12_RESOURCE_STATES* pInitialResourceStates,
     const D3D12_CLEAR_VALUE* const* ppOptimizedClearValues)
 {
-    D3D12MA_ASSERT(m_Heap != NULL);
+    ID3D12Device* device = m_Allocator->GetDevice();
+    ID3D12Heap* const heap = GetHeap();
+    D3D12MA_ASSERT(heap != NULL);
     HRESULT hr = S_OK;
     for(UINT i = 0; i < NumResources; ++i)
     {
         ID3D12Resource* res = NULL;
         hr = device->CreatePlacedResource(
-            m_Heap,
+            heap,
             m_Items[i].offset,
             &pResourceDescs[i],
             pInitialResourceStates[i],
@@ -2552,12 +2575,10 @@ MemoryBlock::MemoryBlock(
     AllocatorPimpl* allocator,
     D3D12_HEAP_TYPE heapType,
     D3D12_HEAP_FLAGS heapFlags,
-    UINT64 size,
     UINT id) :
     m_Allocator(allocator),
     m_HeapType(heapType),
     m_HeapFlags(heapFlags),
-    m_Size(size),
     m_Id(id)
 {
 }
@@ -2570,9 +2591,10 @@ MemoryBlock::~MemoryBlock()
     }
 }
 
-HRESULT MemoryBlock::Init()
+HRESULT MemoryBlock::Init(UINT64 size)
 {
-    D3D12MA_ASSERT(m_Heap == NULL);
+    D3D12MA_ASSERT(m_Heap == NULL && size > 0);
+    m_Size = size;
 
     D3D12_HEAP_DESC heapDesc = {};
     heapDesc.SizeInBytes = m_Size;
@@ -2581,54 +2603,6 @@ HRESULT MemoryBlock::Init()
     heapDesc.Flags = m_HeapFlags;
 
     return m_Allocator->GetDevice()->CreateHeap(&heapDesc, __uuidof(*m_Heap), (void**)&m_Heap);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Private class NormalBlock implementation
-
-NormalBlock::NormalBlock(
-    AllocatorPimpl* allocator,
-    BlockVector* blockVector,
-    D3D12_HEAP_TYPE heapType,
-    D3D12_HEAP_FLAGS heapFlags,
-    UINT64 size,
-    UINT id) :
-    MemoryBlock(allocator, heapType, heapFlags, size, id),
-    m_BlockVector(blockVector)
-{
-}
-
-NormalBlock::~NormalBlock()
-{
-    // THIS IS THE MOST IMPORTANT ASSERT IN THE ENTIRE LIBRARY!
-    // Hitting it means you have some memory leak - unreleased Allocation objects.
-    D3D12MA_ASSERT(m_pMetadata->IsEmpty() && "Some allocations were not freed before destruction of this memory block!");
-
-    D3D12MA_DELETE(m_Allocator->GetAllocs(), m_pMetadata);
-    m_pMetadata = NULL;
-}
-
-HRESULT NormalBlock::Init()
-{
-    HRESULT hr = MemoryBlock::Init();
-    if(FAILED(hr))
-    {
-        return hr;
-    }
-    
-    m_pMetadata = D3D12MA_NEW(m_Allocator->GetAllocs(), BlockMetadata_Generic)(&m_Allocator->GetAllocs());
-    m_pMetadata->Init(GetSize());
-
-    return hr;
-}
-
-bool NormalBlock::Validate() const
-{
-    D3D12MA_VALIDATE(GetHeap() &&
-        m_pMetadata &&
-        m_pMetadata->GetSize() != 0 &&
-        m_pMetadata->GetSize() == GetSize());
-    return m_pMetadata->Validate();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2964,9 +2938,8 @@ HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
         this,
         m_HeapType,
         m_HeapFlags,
-        blockSize,
         m_NextBlockId++);
-    HRESULT hr = pBlock->Init();
+    HRESULT hr = pBlock->Init(blockSize);
     if(FAILED(hr))
     {
         D3D12MA_DELETE(m_hAllocator->GetAllocs(), pBlock);
