@@ -370,6 +370,56 @@ static void TestStats(const TestContext& ctx)
     CheckStatInfo(endStats.HeapType[2]);
 }
 
+static void TestStatsJson(const TestContext& ctx)
+{
+    wprintf(L"Test stats JSON");
+    wprintf(L"Test committed resources\n");
+
+    const UINT count = 4;
+    const UINT64 bufSize = 32ull * 1024;
+    const wchar_t* names[count] = {
+        L"Resource\nFoo\r\nBar",
+        L"Resource \"'&<>?#@!&-=_+[]{};:,./\\",
+        nullptr,
+        L"",
+    };
+
+    ResourceWithAllocation resources[count];
+
+    D3D12MA::ALLOCATION_DESC allocDesc = {};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
+    allocDesc.Flags = D3D12MA::ALLOCATION_FLAG_COMMITTED;
+
+    D3D12_RESOURCE_DESC resourceDesc;
+    FillResourceDescForBuffer(resourceDesc, bufSize);
+
+    for (UINT i = 0; i < count; ++i)
+    {
+        D3D12MA::Allocation* alloc = nullptr;
+        CHECK_HR(ctx.allocator->CreateResource(
+            &allocDesc,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            NULL,
+            &alloc,
+            IID_PPV_ARGS(&resources[i].resource)));
+        resources[i].allocation.reset(alloc);
+
+        // Make sure it has implicit heap.
+        CHECK_BOOL(resources[i].allocation->GetHeap() == NULL && resources[i].allocation->GetOffset() == 0);
+
+        resources[i].allocation->SetName(names[i]);
+    }
+
+    WCHAR* jsonString;
+    ctx.allocator->BuildStatsString(&jsonString, TRUE);
+    CHECK_BOOL(wcsstr(jsonString, L"\"Resource\\nFoo\\r\\nBar\"") != NULL);
+    CHECK_BOOL(wcsstr(jsonString, L"\"Resource \\\"'&<>?#@!&-=_+[]{};:,.\\/\\\\\"") != NULL);
+    CHECK_BOOL(wcsstr(jsonString, L"\"\"") != NULL);
+    CHECK_BOOL(wcsstr(jsonString, L"null") != NULL);
+    ctx.allocator->FreeStatsString(jsonString);
+}
+
 static void TestTransfer(const TestContext& ctx)
 {
     wprintf(L"Test mapping\n");
@@ -617,6 +667,7 @@ static void TestGroupBasics(const TestContext& ctx)
     TestPlacedResources(ctx);
     TestMapping(ctx);
     TestStats(ctx);
+    TestStatsJson(ctx);
     TestTransfer(ctx);
     TestMultithreading(ctx);
 }
