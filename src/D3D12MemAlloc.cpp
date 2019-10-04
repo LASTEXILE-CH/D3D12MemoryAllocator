@@ -86,6 +86,11 @@
    #define D3D12MA_DEFAULT_BLOCK_SIZE (256ull * 1024 * 1024)
 #endif
 
+#ifndef D3D12MA_ALIASING_ENABLED
+    /// Define to 0 to disable aliasing. Behaves like every resource interferes with every other.
+    #define D3D12MA_ALIASING_ENABLED (1)
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -2665,6 +2670,9 @@ void ResourceInterferenceMatrix::Init(UINT count, const ResourceInterference* in
 
 bool ResourceInterferenceMatrix::Interferes(UINT resourceIndex1, UINT resourceIndex2) const
 {
+    if(!D3D12MA_ALIASING_ENABLED)
+        return true;
+
     if(m_UseBits)
     {
         if(resourceIndex1 < 64 && resourceIndex2 < 64)
