@@ -622,6 +622,13 @@ public:
     */
     void CalculateStats(Stats* pStats);
 
+    /// Builds ands returns statistics as a string in JSON format.
+    /** @param[out] ppStatsString Must be free using Allocator::FreeStatsString
+    */
+    void BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap);
+
+    void FreeStatsString(WCHAR* pStatsString);
+
 private:
     friend HRESULT CreateAllocator(const ALLOCATOR_DESC*, Allocator**);
     template<typename T> friend void D3D12MA_DELETE(const ALLOCATION_CALLBACKS&, T*);
