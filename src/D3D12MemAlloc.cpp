@@ -477,6 +477,12 @@ static UINT HeapTypeToIndex(D3D12_HEAP_TYPE type)
     }
 }
 
+static const WCHAR* const HeapTypeNames[] = {
+    L"DEFAULT",
+    L"UPLOAD",
+    L"READBACK",
+};
+
 // Stat helper functions
 
 static void AddStatInfo(StatInfo& dst, const StatInfo& src)
@@ -769,6 +775,348 @@ private:
     size_t m_Count;
     size_t m_Capacity;
 };
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class StringBuilder
+
+class StringBuilder
+{
+public:
+    StringBuilder(const ALLOCATION_CALLBACKS& allocationCallbacks) : m_Data(allocationCallbacks) { }
+
+    size_t GetLength() const { return m_Data.size(); }
+    LPCWSTR GetData() const { return m_Data.data(); }
+
+    void Add(WCHAR ch) { m_Data.push_back(ch); }
+    void Add(LPCWSTR str);
+    void AddNewLine() { Add(L'\n'); }
+    void AddNumber(UINT num);
+    void AddNumber(UINT64 num);
+
+private:
+    Vector<WCHAR> m_Data;
+};
+
+void StringBuilder::Add(LPCWSTR str)
+{
+    const size_t len = wcslen(str);
+    if (len > 0)
+    {
+        const size_t oldCount = m_Data.size();
+        m_Data.resize(oldCount + len);
+        memcpy(m_Data.data() + oldCount, str, len * sizeof(WCHAR));
+    }
+}
+
+void StringBuilder::AddNumber(UINT num)
+{
+    WCHAR buf[11];
+    buf[10] = L'\0';
+    WCHAR *p = &buf[10];
+    do
+    {
+        *--p = L'0' + (num % 10);
+        num /= 10;
+    }
+    while (num);
+    Add(p);
+}
+
+void StringBuilder::AddNumber(UINT64 num)
+{
+    WCHAR buf[21];
+    buf[20] = L'\0';
+    WCHAR *p = &buf[20];
+    do
+    {
+        *--p = L'0' + (num % 10);
+        num /= 10;
+    }
+    while (num);
+    Add(p);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class JsonWriter
+class JsonWriter
+{
+public:
+    JsonWriter(const ALLOCATION_CALLBACKS& allocationCallbacks, StringBuilder& stringBuilder);
+    ~JsonWriter();
+
+    void BeginObject(bool singleLine = false);
+    void EndObject();
+
+    void BeginArray(bool singleLine = false);
+    void EndArray();
+
+    void WriteString(LPCWSTR pStr);
+    void BeginString(LPCWSTR pStr = NULL);
+    void ContinueString(LPCWSTR pStr);
+    void ContinueString(UINT num);
+    void ContinueString(UINT64 num);
+    // void ContinueString_Pointer(const void* ptr);
+    void EndString(LPCWSTR pStr = NULL);
+
+    void WriteNumber(UINT num);
+    void WriteNumber(UINT64 num);
+    void WriteBool(bool b);
+    void WriteNull();
+
+private:
+    static const WCHAR* const INDENT;
+
+    enum CollectionType
+    {
+        COLLECTION_TYPE_OBJECT,
+        COLLECTION_TYPE_ARRAY,
+    };
+    struct StackItem
+    {
+        CollectionType type;
+        UINT valueCount;
+        bool singleLineMode;
+    };
+
+    StringBuilder& m_SB;
+    Vector<StackItem> m_Stack;
+    bool m_InsideString;
+
+    void BeginValue(bool isString);
+    void WriteIndent(bool oneLess = false);
+};
+
+const WCHAR* const JsonWriter::INDENT = L"  ";
+
+JsonWriter::JsonWriter(const ALLOCATION_CALLBACKS& allocationCallbacks, StringBuilder& stringBuilder) :
+    m_SB(stringBuilder),
+    m_Stack(allocationCallbacks),
+    m_InsideString(false)
+{
+}
+
+JsonWriter::~JsonWriter()
+{
+    D3D12MA_ASSERT(!m_InsideString);
+    D3D12MA_ASSERT(m_Stack.empty());
+}
+
+void JsonWriter::BeginObject(bool singleLine)
+{
+    D3D12MA_ASSERT(!m_InsideString);
+
+    BeginValue(false);
+    m_SB.Add(L'{');
+
+    StackItem stackItem;
+    stackItem.type = COLLECTION_TYPE_OBJECT;
+    stackItem.valueCount = 0;
+    stackItem.singleLineMode = singleLine;
+    m_Stack.push_back(stackItem);
+}
+
+void JsonWriter::EndObject()
+{
+    D3D12MA_ASSERT(!m_InsideString);
+    D3D12MA_ASSERT(!m_Stack.empty() && m_Stack.back().type == COLLECTION_TYPE_OBJECT);
+    D3D12MA_ASSERT(m_Stack.back().valueCount % 2 == 0);
+
+    WriteIndent(true);
+    m_SB.Add(L'}');
+
+    m_Stack.pop_back();
+}
+
+void JsonWriter::BeginArray(bool singleLine)
+{
+    D3D12MA_ASSERT(!m_InsideString);
+
+    BeginValue(false);
+    m_SB.Add(L'[');
+
+    StackItem stackItem;
+    stackItem.type = COLLECTION_TYPE_ARRAY;
+    stackItem.valueCount = 0;
+    stackItem.singleLineMode = singleLine;
+    m_Stack.push_back(stackItem);
+}
+
+void JsonWriter::EndArray()
+{
+    D3D12MA_ASSERT(!m_InsideString);
+    D3D12MA_ASSERT(!m_Stack.empty() && m_Stack.back().type == COLLECTION_TYPE_ARRAY);
+
+    WriteIndent(true);
+    m_SB.Add(L']');
+
+    m_Stack.pop_back();
+}
+
+void JsonWriter::WriteString(LPCWSTR pStr)
+{
+    BeginString(pStr);
+    EndString();
+}
+
+void JsonWriter::BeginString(LPCWSTR pStr)
+{
+    D3D12MA_ASSERT(!m_InsideString);
+
+    BeginValue(true);
+    m_InsideString = true;
+    m_SB.Add(L'"');
+    if (pStr != NULL)
+    {
+        ContinueString(pStr);
+    }
+}
+
+void JsonWriter::ContinueString(LPCWSTR pStr)
+{
+    D3D12MA_ASSERT(m_InsideString);
+    D3D12MA_ASSERT(pStr);
+
+    for (const WCHAR *p = pStr; *p; ++p)
+    {
+        // the strings we encode are assumed to be in UTF-16LE format, the native
+        // windows wide character unicode format. In this encoding unicode code
+        // points U+0000 to U+D7FF and U+E000 to U+FFFF are encoded in two bytes,
+        // and everything else takes more than two bytes. We will reject any
+        // multi wchar character encodings for simplicity.
+        UINT val = (UINT)*p;
+        D3D12MA_ASSERT(((val <= 0xD7FF) || (0xE000 <= val && val <= 0xFFFF)) &&
+            "Character not currently supported.");
+        switch (*p)
+        {
+        case L'"':  m_SB.Add(L'\\'); m_SB.Add(L'"');  break;
+        case L'\\': m_SB.Add(L'\\'); m_SB.Add(L'\\'); break;
+        case L'/':  m_SB.Add(L'\\'); m_SB.Add(L'/');  break;
+        case L'\b': m_SB.Add(L'\\'); m_SB.Add(L'b');  break;
+        case L'\f': m_SB.Add(L'\\'); m_SB.Add(L'f');  break;
+        case L'\n': m_SB.Add(L'\\'); m_SB.Add(L'n');  break;
+        case L'\r': m_SB.Add(L'\\'); m_SB.Add(L'r');  break;
+        case L'\t': m_SB.Add(L'\\'); m_SB.Add(L't');  break;
+        default:
+            // conservatively use encoding \uXXXX for any unicode character
+            // requiring more than one byte.
+            if (32 <= val && val < 256)
+                m_SB.Add(*p);
+            else
+            {
+                m_SB.Add(L'\\');
+                m_SB.Add(L'u');
+                for (UINT i = 0; i < 4; ++i)
+                {
+                    UINT hexDigit = (val & 0xF000) >> 12;
+                    val <<= 4;
+                    if (hexDigit < 10)
+                        m_SB.Add(L'0' + hexDigit);
+                    else
+                        m_SB.Add(L'A' + hexDigit);
+                }
+            }
+            break;
+        }
+    }
+}
+
+void JsonWriter::ContinueString(UINT num)
+{
+    D3D12MA_ASSERT(m_InsideString);
+    m_SB.AddNumber(num);
+}
+
+void JsonWriter::ContinueString(UINT64 num)
+{
+    D3D12MA_ASSERT(m_InsideString);
+    m_SB.AddNumber(num);
+}
+
+void JsonWriter::EndString(LPCWSTR pStr)
+{
+    D3D12MA_ASSERT(m_InsideString);
+
+    if (pStr)
+        ContinueString(pStr);
+    m_SB.Add(L'"');
+    m_InsideString = false;
+}
+
+void JsonWriter::WriteNumber(UINT num)
+{
+    D3D12MA_ASSERT(!m_InsideString);
+    BeginValue(false);
+    m_SB.AddNumber(num);
+}
+
+void JsonWriter::WriteNumber(UINT64 num)
+{
+    D3D12MA_ASSERT(!m_InsideString);
+    BeginValue(false);
+    m_SB.AddNumber(num);
+}
+
+void JsonWriter::WriteBool(bool b)
+{
+    D3D12MA_ASSERT(!m_InsideString);
+    BeginValue(false);
+    if (b)
+        m_SB.Add(L"true");
+    else
+        m_SB.Add(L"false");
+}
+
+void JsonWriter::WriteNull()
+{
+    D3D12MA_ASSERT(!m_InsideString);
+    BeginValue(false);
+    m_SB.Add(L"null");
+}
+
+void JsonWriter::BeginValue(bool isString)
+{
+    if (!m_Stack.empty())
+    {
+        StackItem& currItem = m_Stack.back();
+        if (currItem.type == COLLECTION_TYPE_OBJECT && currItem.valueCount % 2 == 0)
+        {
+            D3D12MA_ASSERT(isString);
+        }
+
+        if (currItem.type == COLLECTION_TYPE_OBJECT && currItem.valueCount % 2 == 1)
+        {
+            m_SB.Add(L':'); m_SB.Add(L' ');
+        }
+        else if (currItem.valueCount > 0)
+        {
+            m_SB.Add(L','); m_SB.Add(L' ');
+            WriteIndent();
+        }
+        else
+        {
+            WriteIndent();
+        }
+        ++currItem.valueCount;
+    }
+}
+
+void JsonWriter::WriteIndent(bool oneLess)
+{
+    if (!m_Stack.empty() && !m_Stack.back().singleLineMode)
+    {
+        m_SB.AddNewLine();
+
+        size_t count = m_Stack.size();
+        if (count > 0 && oneLess)
+        {
+            --count;
+        }
+        for (size_t i = 0; i < count; ++i)
+        {
+            m_SB.Add(INDENT);
+        }
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private class PoolAllocator
@@ -1457,6 +1805,7 @@ public:
     virtual void FreeAtOffset(UINT64 offset) = 0;
 
     virtual void CalcAllocationStatInfo(StatInfo& outInfo) const = 0;
+    virtual void WriteAllocationInfoToJson(JsonWriter& json) const = 0;
 
 protected:
     const ALLOCATION_CALLBACKS* GetAllocs() const { return m_pAllocationCallbacks; }
@@ -1497,6 +1846,7 @@ public:
     virtual void FreeAtOffset(UINT64 offset);
 
     virtual void CalcAllocationStatInfo(StatInfo& outInfo) const;
+    virtual void WriteAllocationInfoToJson(JsonWriter& json) const;
 
 private:
     UINT m_FreeCount;
@@ -1765,6 +2115,8 @@ public:
 
     void AddStats(Stats& outpStats);
 
+    void WriteBlockInfoToJson(JsonWriter& json);
+
 private:
     AllocatorPimpl* const m_hAllocator;
     const D3D12_HEAP_TYPE m_HeapType;
@@ -1864,6 +2216,10 @@ public:
     void FreeAliasingMemory(Allocation* allocation);
 
     void CalculateStats(Stats& outStats);
+
+    void BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap);
+
+    void FreeStatsString(WCHAR* pStatsString);
 
 private:
     friend class Allocator;
@@ -2450,6 +2806,52 @@ void BlockMetadata_Generic::CalcAllocationStatInfo(StatInfo& outInfo) const
             outInfo.AllocationSizeMax = D3D12MA_MAX(suballoc.size, outInfo.AllocationSizeMax);
         }
     }
+}
+
+void BlockMetadata_Generic::WriteAllocationInfoToJson(JsonWriter& json) const
+{
+    json.BeginObject();
+    json.WriteString(L"TotalBytes");
+    json.WriteNumber(GetSize());
+    json.WriteString(L"UnusuedBytes");
+    json.WriteNumber(GetSumFreeSize());
+    json.WriteString(L"Allocations");
+    json.WriteNumber(GetAllocationCount());
+    json.WriteString(L"UnusedRanges");
+    json.WriteNumber(m_FreeCount);
+    json.WriteString(L"Suballocations");
+    json.BeginArray();
+    for(SuballocationList::const_iterator suballocItem = m_Suballocations.cbegin();
+        suballocItem != m_Suballocations.cend();
+        ++suballocItem)
+    {
+        const Suballocation& suballoc = *suballocItem;
+        json.BeginObject(true);
+        json.WriteString(L"Offset");
+        json.WriteNumber(suballoc.offset);
+        json.WriteString(L"Type");
+        if(suballoc.type == SUBALLOCATION_TYPE_FREE)
+        {
+            json.WriteString(L"FREE");
+        }
+        else
+        {
+            json.WriteString(L"ALLOCATION");
+            const Allocation* const alloc = suballoc.allocation;
+            D3D12MA_ASSERT(alloc);
+            const WCHAR* const name = alloc->GetName();
+            if(name != NULL)
+            {
+                json.WriteString(L"Name");
+                json.WriteString(name);
+            }
+        }
+        json.WriteString(L"Size");
+        json.WriteNumber(suballoc.size);
+        json.EndObject();
+    }
+    json.EndArray();
+    json.EndObject();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3213,6 +3615,27 @@ void BlockVector::AddStats(Stats& outStats)
     }
 }
 
+void BlockVector::WriteBlockInfoToJson(JsonWriter& json)
+{
+    MutexLockRead lock(m_Mutex, m_hAllocator->UseMutex());
+
+    json.BeginObject();
+
+    for (size_t i = 0, count = m_Blocks.size(); i < count; ++i)
+    {
+        const NormalBlock* const pBlock = m_Blocks[i];
+        D3D12MA_ASSERT(pBlock);
+        D3D12MA_HEAVY_ASSERT(pBlock->Validate());
+        json.BeginString();
+        json.ContinueString(pBlock->GetId());
+        json.EndString();
+
+        pBlock->m_pMetadata->WriteAllocationInfoToJson(json);
+    }
+
+    json.EndObject();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Private class AllocatorPimpl implementation
 
@@ -3816,6 +4239,167 @@ void AllocatorPimpl::CalculateStats(Stats& outStats)
         PostProcessStatInfo(outStats.HeapType[i]);
 }
 
+static void AddStatInfoToJson(JsonWriter& json, const StatInfo& statInfo)
+{
+    json.BeginObject();
+    json.WriteString(L"Blocks");
+    json.WriteNumber(statInfo.BlockCount);
+    json.WriteString(L"Allocations");
+    json.WriteNumber(statInfo.AllocationCount);
+    json.WriteString(L"UnusedRanges");
+    json.WriteNumber(statInfo.UnusedRangeCount);
+    json.WriteString(L"UsedBytes");
+    json.WriteNumber(statInfo.UsedBytes);
+    json.WriteString(L"UnusedBytes");
+    json.WriteNumber(statInfo.UnusedBytes);
+
+    json.WriteString(L"AllocationSize");
+    json.BeginObject(true);
+    json.WriteString(L"Min");
+    json.WriteNumber(statInfo.AllocationSizeMin);
+    json.WriteString(L"Avg");
+    json.WriteNumber(statInfo.AllocationSizeAvg);
+    json.WriteString(L"Max");
+    json.WriteNumber(statInfo.AllocationSizeMax);
+    json.EndObject();
+
+    json.WriteString(L"UnusedRangeSize");
+    json.BeginObject(true);
+    json.WriteString(L"Min");
+    json.WriteNumber(statInfo.UnusedRangeSizeMin);
+    json.WriteString(L"Avg");
+    json.WriteNumber(statInfo.UnusedRangeSizeAvg);
+    json.WriteString(L"Max");
+    json.WriteNumber(statInfo.UnusedRangeSizeMax);
+    json.EndObject();
+
+    json.EndObject();
+}
+
+void AllocatorPimpl::BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap)
+{
+    StringBuilder sb(GetAllocs());
+    {
+        JsonWriter json(GetAllocs(), sb);
+
+        Stats stats;
+        CalculateStats(stats);
+
+        json.BeginObject();
+        json.WriteString(L"Total");
+        AddStatInfoToJson(json, stats.Total);
+        for (size_t heapType = 0; heapType < HEAP_TYPE_COUNT; ++heapType)
+        {
+            json.WriteString(HeapTypeNames[heapType]);
+            AddStatInfoToJson(json, stats.HeapType[heapType]);
+        }
+
+        if (DetailedMap)
+        {
+            json.WriteString(L"DetailedMap");
+            json.BeginObject();
+
+            json.WriteString(L"DefaultPools");
+            json.BeginObject();
+
+            D3D12MA_ASSERT(SupportsResourceHeapTier2());
+            if (SupportsResourceHeapTier2())
+            {
+                for (size_t heapType = 0; heapType < HEAP_TYPE_COUNT; ++heapType)
+                {
+                    json.WriteString(HeapTypeNames[heapType]);
+                    json.BeginObject();
+
+                    json.WriteString(L"Blocks");
+
+                    BlockVector* blockVector = m_BlockVectors[heapType];
+                    D3D12MA_ASSERT(blockVector);
+                    blockVector->WriteBlockInfoToJson(json);
+
+                    json.EndObject(); // heap name
+                }
+            }
+            else
+            {
+                for (size_t heapType = 0; heapType < HEAP_TYPE_COUNT; ++heapType)
+                {
+                    for (size_t heapSubType = 0; heapSubType < 3; ++heapSubType)
+                    {
+                        static const WCHAR* const heapSubTypeName[] = {
+                            L" + buffer",
+                            L" + texture",
+                            L" + texture RT or DS",
+                        };
+                        json.BeginString();
+                        json.ContinueString(HeapTypeNames[heapType]);
+                        json.ContinueString(heapSubTypeName[heapSubType]);
+                        json.EndString();
+                        json.BeginObject();
+
+                        json.WriteString(L"Blocks");
+
+                        BlockVector* blockVector = m_BlockVectors[heapType * 3 + heapSubType];
+                        D3D12MA_ASSERT(blockVector);
+                        blockVector->WriteBlockInfoToJson(json);
+
+                        json.EndObject(); // heap name
+                    }
+                }
+            }
+
+            json.EndObject(); // DefaultPools
+
+            json.WriteString(L"CommittedAllocations");
+            json.BeginObject();
+
+            for (size_t heapType = 0; heapType < HEAP_TYPE_COUNT; ++heapType)
+            {
+                json.WriteString(HeapTypeNames[heapType]);
+                MutexLockRead lock(m_CommittedAllocationsMutex[heapType], m_UseMutex);
+
+                json.BeginArray();
+                const AllocationVectorType* const allocationVector = m_pCommittedAllocations[heapType];
+                D3D12MA_ASSERT(allocationVector);
+                for (size_t i = 0, count = allocationVector->size(); i < count; ++i)
+                {
+                    Allocation* alloc = (*allocationVector)[i];
+                    D3D12MA_ASSERT(alloc);
+
+                    json.BeginObject(true);
+                    json.WriteString(L"Type");
+                    json.WriteString(L"ALLOCATION");
+                    json.WriteString(L"Size");
+                    json.WriteNumber(alloc->GetSize());
+                    LPCWSTR name = alloc->GetName();
+                    if(name != NULL)
+                    {
+                        json.WriteString(L"Name");
+                        json.WriteString(name);
+                    }
+                    json.EndObject();
+                }
+                json.EndArray();
+            }
+
+            json.EndObject(); // CommittedAllocations
+
+            json.EndObject(); // DetailedMap
+        }
+        json.EndObject();
+    }
+
+    const size_t length = sb.GetLength();
+    WCHAR* result = AllocateArray<WCHAR>(GetAllocs(), length + 1);
+    memcpy(result, sb.GetData(), length * sizeof(WCHAR));
+    result[length] = L'\0';
+    *ppStatsString = result;
+}
+
+void AllocatorPimpl::FreeStatsString(WCHAR* pStatsString)
+{
+    D3D12MA_ASSERT(pStatsString);
+    Free(GetAllocs(), pStatsString);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Public class Allocation implementation
@@ -3891,8 +4475,8 @@ void Allocation::SetName(LPCWSTR Name)
     if(Name)
     {
         const size_t nameCharCount = wcslen(Name) + 1;
-        m_Name = D3D12MA_NEW_ARRAY(m_Allocator->GetAllocs(), wchar_t, nameCharCount);
-        memcpy(m_Name, Name, nameCharCount * sizeof(wchar_t));
+        m_Name = D3D12MA_NEW_ARRAY(m_Allocator->GetAllocs(), WCHAR, nameCharCount);
+        memcpy(m_Name, Name, nameCharCount * sizeof(WCHAR));
     }
 }
 
@@ -4065,6 +4649,22 @@ HRESULT Allocator::GetAliasingBarriers(
 
     D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
     return m_Pimpl->GetAliasingBarriers(NumAllocationsAfter, pAllocationsAfter, pNumBarriers, pBarriers);
+}
+
+void Allocator::BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap)
+{
+    D3D12MA_ASSERT(ppStatsString);
+    D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
+    m_Pimpl->BuildStatsString(ppStatsString, DetailedMap);
+}
+
+void Allocator::FreeStatsString(WCHAR* pStatsString)
+{
+    if (pStatsString != NULL)
+    {
+        D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
+        m_Pimpl->FreeStatsString(pStatsString);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

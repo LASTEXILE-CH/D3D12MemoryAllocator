@@ -754,6 +754,14 @@ public:
         UINT* pNumBarriers,
         D3D12_RESOURCE_BARRIER* pBarriers);
 
+    /// Builds and returns statistics as a string in JSON format.
+    /** @param[out] ppStatsString Must be freed using Allocator::FreeStatsString.
+    */
+    void BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap);
+
+    /// Frees memory of a string returned from Allocator::BuildStatsString.
+    void FreeStatsString(WCHAR* pStatsString);
+
 private:
     friend HRESULT CreateAllocator(const ALLOCATOR_DESC*, Allocator**);
     template<typename T> friend void D3D12MA_DELETE(const ALLOCATION_CALLBACKS&, T*);

@@ -91,9 +91,9 @@ static bool ValidateData(const void* ptr, const UINT64 sizeInBytes, UINT seed)
     return true;
 }
 
-static void TestCommittedResources(const TestContext& ctx)
+static void TestCommittedResourcesAndJson(const TestContext& ctx)
 {
-    wprintf(L"Test committed resources\n");
+    wprintf(L"Test committed resources and JSON\n");
     
     const UINT count = 4;
     const UINT64 bufSize = 32ull * 1024;
@@ -156,6 +156,13 @@ static void TestCommittedResources(const TestContext& ctx)
             CHECK_BOOL(names[i] == NULL);
         }
     }
+
+    WCHAR* jsonString;
+    ctx.allocator->BuildStatsString(&jsonString, TRUE);
+    CHECK_BOOL(wcsstr(jsonString, L"\"Resource\\nFoo\\r\\nBar\"") != NULL);
+    CHECK_BOOL(wcsstr(jsonString, L"\"Resource \\\"'&<>?#@!&-=_+[]{};:,.\\/\\\\\"") != NULL);
+    CHECK_BOOL(wcsstr(jsonString, L"\"\"") != NULL);
+    ctx.allocator->FreeStatsString(jsonString);
 }
 
 static void TestPlacedResources(const TestContext& ctx)
@@ -485,12 +492,14 @@ static void TestAliasingCase(const TestContext& ctx,
     }
 
     // DEBUG PRINT
+    /*
     for(size_t i = 0; i < resourceCount; ++i)
     {
         printf("Res %zu: offset=%llu, size=%llu\n", i,
             resources[i].allocation->GetOffset(),
             resources[i].allocation->GetSize());
     }
+    */
 
     // Make sure buffers are placed in a heap and belong to the same heap.
     for(size_t i = 0; i < resourceCount; ++i)
@@ -830,7 +839,7 @@ static void TestMultithreading(const TestContext& ctx)
 
 static void TestGroupBasics(const TestContext& ctx)
 {
-    TestCommittedResources(ctx);
+    TestCommittedResourcesAndJson(ctx);
     TestPlacedResources(ctx);
     TestMapping(ctx);
     TestStats(ctx);
@@ -843,7 +852,7 @@ void Test(const TestContext& ctx)
 {
     wprintf(L"TESTS BEGIN\n");
 
-    if(true)
+    if(false)
     {
         ////////////////////////////////////////////////////////////////////////////////
         // Temporarily insert custom tests here:
