@@ -386,21 +386,34 @@ static void TestAliasing(const TestContext& ctx)
 {
     wprintf(L"Test aliasing\n");
     
-    const UINT smallBufCount = 10;
-    const UINT resourceCount = smallBufCount
-        + 1; // Big buffer.
-    const UINT64 smallBufSize = 64ull * 1024;
-    const UINT64 bigBufSize = 10ull * 1024 * 1024;
+    const UINT64 bufSizes[] = {
+        64ull * 1024,
+        64ull * 1024,
+        64ull * 1024,
+        64ull * 1024,
+        64ull * 1024,
+        64ull * 1024,
+        64ull * 1024,
+        64ull * 1024,
+        64ull * 1024,
+        64ull * 1024,
+        10ull * 1024 * 1024,
+    };
+    constexpr UINT resourceCount = _countof(bufSizes);
     ResourceWithAllocation resources[resourceCount];
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
     allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
 
+    D3D12MA::ResourceInterference interferences[] = {
+        { 0, 1 },
+        { 1, 10 },
+    };
+    constexpr UINT interferenceCount = _countof(interferences);
+
     D3D12_RESOURCE_DESC resourceDescs[resourceCount];
-    FillResourceDescForBuffer(resourceDescs[0], smallBufSize);
-    for(UINT i = 1; i < smallBufCount; ++i)
-        resourceDescs[i] = resourceDescs[0];
-    FillResourceDescForBuffer(resourceDescs[smallBufCount], bigBufSize);
+    for(UINT i = 0; i < resourceCount; ++i)
+        FillResourceDescForBuffer(resourceDescs[i], bufSizes[i]);
 
     {
         D3D12_RESOURCE_STATES initialStates[resourceCount];
@@ -417,8 +430,8 @@ static void TestAliasing(const TestContext& ctx)
             resourceDescs,
             initialStates,
             NULL, // ppOptimizedClearValues
-            0, // NumInterferences
-            NULL, // pInterferences
+            interferenceCount, // NumInterferences
+            interferences, // pInterferences
             outAllocations,
             (void**)outResources,
             &stats) );
@@ -427,9 +440,20 @@ static void TestAliasing(const TestContext& ctx)
             resources[i].allocation.reset(outAllocations[i]);
             resources[i].resource.p = outResources[i];
         }
-        CHECK_BOOL(stats.SumSizeInBytes == smallBufSize * smallBufCount + bigBufSize);
+        CHECK_BOOL(stats.SumSizeInBytes == std::accumulate(bufSizes, bufSizes + resourceCount, 0ull));
     }
 
+    // DEBUG PRINT
+    for(size_t i = 0; i < resourceCount; ++i)
+    {
+        printf("Res %zu: offset=%llu, size=%llu\n", i,
+            resources[i].allocation->GetOffset(),
+            resources[i].allocation->GetSize());
+    }
+
+    // Make sure buffers are placed in a heap and belong to the same heap.
+    CHECK_BOOL(resources[0].allocation->GetHeap() != NULL &&
+        resources[0].allocation->GetHeap() == resources[1].allocation->GetHeap());
 }
 
 static void TestTransfer(const TestContext& ctx)
@@ -688,10 +712,11 @@ void Test(const TestContext& ctx)
 {
     wprintf(L"TESTS BEGIN\n");
 
-    if(false)
+    if(true)
     {
         ////////////////////////////////////////////////////////////////////////////////
         // Temporarily insert custom tests here:
+        TestAliasing(ctx);
         return;
     }
 
