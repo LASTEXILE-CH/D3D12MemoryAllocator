@@ -382,58 +382,99 @@ static void TestStats(const TestContext& ctx)
     CheckStatInfo(endStats.HeapType[2]);
 }
 
-static void TestAliasing(const TestContext& ctx)
+static void TestAliasing0(const TestContext& ctx)
 {
-    wprintf(L"Test aliasing\n");
-    
-    const UINT64 bufSizes[] = {
-        64ull * 1024,
-        64ull * 1024,
-        64ull * 1024,
-        64ull * 1024,
-        64ull * 1024,
-        64ull * 1024,
-        64ull * 1024,
-        64ull * 1024,
-        64ull * 1024,
-        64ull * 1024,
-        10ull * 1024 * 1024,
-    };
-    constexpr UINT resourceCount = _countof(bufSizes);
-    ResourceWithAllocation resources[resourceCount];
+    D3D12MA::ALLOCATION_DESC allocDesc = {};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12MA::Allocation* allocation = nullptr;
+    CHECK_HR( ctx.allocator->CreateAliasingResources(
+        &allocDesc,
+        0, // NumResources
+        nullptr, //pResourceDescs
+        nullptr, // pInitialStates
+        nullptr, // ppOptimizedClearValues
+        0, // NumInterferences
+        nullptr, // pInterferences
+        &allocation, // ppAllocations
+        nullptr, // ppvResources
+        nullptr) ); // pStats
+    CHECK_BOOL(allocation == nullptr);
+}
+
+static void TestAliasing1(const TestContext& ctx)
+{
+    D3D12MA::ALLOCATION_DESC allocDesc = {};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_RESOURCE_DESC resourceDesc = {};
+    FillResourceDescForBuffer(resourceDesc, 64ull * 1024);
+
+    D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_COMMON;
+
+    D3D12MA::Allocation* alloc = nullptr;
+    CHECK_HR( ctx.allocator->CreateAliasingResources(
+        &allocDesc,
+        1, // NumResources
+        &resourceDesc, //pResourceDescs
+        &initialState, // pInitialStates
+        nullptr, // ppOptimizedClearValues
+        0, // NumInterferences
+        nullptr, // pInterferences
+        &alloc, // ppAllocations
+        nullptr, // ppvResources
+        nullptr) ); // pStats
+    CHECK_BOOL(alloc!= nullptr);
+    AllocationUniquePtr allocation{alloc};
+}
+
+static bool AllocationsAlias(const D3D12MA::Allocation* allocA, const D3D12MA::Allocation* allocB)
+{
+    if(allocA->GetHeap() == NULL ||
+        allocA->GetHeap() != allocB->GetHeap())
+    {
+        return false;
+    }
+    const UINT64 endA = allocA->GetOffset() + allocA->GetSize();
+    const UINT64 endB = allocB->GetOffset() + allocB->GetSize();
+    return endA > allocB->GetOffset() && allocA->GetOffset() < endB;
+}
+
+static void TestAliasingCase(const TestContext& ctx,
+    const UINT64* bufSizes, size_t resourceCount,
+    const D3D12MA::ResourceInterference* interferences, size_t interferenceCount,
+    bool expectAliasing)
+{
+    std::vector<ResourceWithAllocation> resources{resourceCount};
 
     D3D12MA::ALLOCATION_DESC allocDesc = {};
     allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
 
-    D3D12MA::ResourceInterference interferences[] = {
-        { 0, 1 },
-        { 1, 10 },
-    };
-    constexpr UINT interferenceCount = _countof(interferences);
-
-    D3D12_RESOURCE_DESC resourceDescs[resourceCount];
+    std::vector<D3D12_RESOURCE_DESC> resourceDescs{resourceCount};
     for(UINT i = 0; i < resourceCount; ++i)
+    {
         FillResourceDescForBuffer(resourceDescs[i], bufSizes[i]);
+    }
 
     {
-        D3D12_RESOURCE_STATES initialStates[resourceCount];
+        std::vector<D3D12_RESOURCE_STATES> initialStates{resourceCount};
         for(UINT i = 0; i < resourceCount; ++i)
         {
             initialStates[i] = D3D12_RESOURCE_STATE_COMMON;
         }
-        D3D12MA::Allocation* outAllocations[resourceCount] = {};
-        ID3D12Resource* outResources[resourceCount] = {};
+        std::vector<D3D12MA::Allocation*> outAllocations{resourceCount};
+        std::vector<ID3D12Resource*> outResources{resourceCount};
         D3D12MA::AliasingStats stats = {};
         CHECK_HR( ctx.allocator->CreateAliasingResources(
             &allocDesc,
-            resourceCount,
-            resourceDescs,
-            initialStates,
+            (UINT)resourceCount,
+            resourceDescs.data(),
+            initialStates.data(),
             NULL, // ppOptimizedClearValues
-            interferenceCount, // NumInterferences
+            (UINT)interferenceCount, // NumInterferences
             interferences, // pInterferences
-            outAllocations,
-            (void**)outResources,
+            outAllocations.data(),
+            (void**)outResources.data(),
             &stats) );
         for(UINT i = 0; i < resourceCount; ++i)
         {
@@ -452,8 +493,98 @@ static void TestAliasing(const TestContext& ctx)
     }
 
     // Make sure buffers are placed in a heap and belong to the same heap.
-    CHECK_BOOL(resources[0].allocation->GetHeap() != NULL &&
-        resources[0].allocation->GetHeap() == resources[1].allocation->GetHeap());
+    for(size_t i = 0; i < resourceCount; ++i)
+    {
+        CHECK_BOOL(resources[i].allocation->GetHeap() != NULL &&
+            resources[i].allocation->GetHeap() == resources[0].allocation->GetHeap());
+    }
+    // Check if interfering resources really don't overlap.
+    for(size_t i = 0; i < interferenceCount; ++i)
+    {
+        const D3D12MA::ResourceInterference interference = interferences[i];
+        const ResourceWithAllocation& resA = resources[interference.ResourceIndex1];
+        const ResourceWithAllocation& resB = resources[interference.ResourceIndex2];
+        CHECK_BOOL(!AllocationsAlias(resA.allocation.get(), resB.allocation.get()));
+    }
+    // Check that some resources do overlap.
+    if(expectAliasing)
+    {
+        bool aliasingFound = false;
+        for(size_t i = 0; i < resourceCount && !aliasingFound; ++i)
+        {
+            for(size_t j = i + 1; j < resourceCount && !aliasingFound; ++j)
+            {
+                const ResourceWithAllocation& resA = resources[i];
+                const ResourceWithAllocation& resB = resources[j];
+                if(AllocationsAlias(resA.allocation.get(), resB.allocation.get()))
+                {
+                    aliasingFound = true;
+                }
+            }
+        }
+        CHECK_BOOL(aliasingFound);
+    }
+}
+
+static void TestAliasing(const TestContext& ctx)
+{
+    wprintf(L"Test aliasing\n");
+
+    TestAliasing0(ctx);
+    
+    TestAliasing1(ctx);
+    
+    // Few buffers, same and different sizes, all alias.
+    {
+        const UINT64 bufSizes[] = {
+            64ull * 1024,
+            64ull * 1024,
+            64ull * 1024,
+            64ull * 1024,
+            64ull * 1024,
+            1ull * 1024 * 1024,
+            10ull * 1024 * 1024,
+        };
+        TestAliasingCase(ctx, bufSizes, _countof(bufSizes), nullptr, 0, true);
+    }
+
+    // Few buffers, same and different sizes, none of them alias.
+    {
+        const UINT64 bufSizes[] = {
+            64ull * 1024,
+            64ull * 1024,
+            1ull * 1024 * 1024,
+            10ull * 1024 * 1024,
+        };
+        D3D12MA::ResourceInterference interferences[] = {
+            { 0, 1 },
+            { 0, 2 },
+            { 0, 3 },
+            { 1, 2 },
+            { 3, 2 },
+            { 3, 1 },
+        };
+        TestAliasingCase(ctx, bufSizes, _countof(bufSizes), interferences, _countof(interferences), false);
+    }
+
+    // Few buffers, same and different sizes, some of them can alias.
+    {
+        const UINT64 bufSizes[] = {
+            64ull * 1024,
+            64ull * 1024,
+            64ull * 1024,
+            64ull * 1024,
+            64ull * 1024,
+            1ull * 1024 * 1024,
+            10ull * 1024 * 1024,
+        };
+        D3D12MA::ResourceInterference interferences[] = {
+            { 0, 1 },
+            { 2, 6 },
+            { 4, 2 },
+        };
+        TestAliasingCase(ctx, bufSizes, _countof(bufSizes), interferences, _countof(interferences), true);
+    }
 }
 
 static void TestTransfer(const TestContext& ctx)
