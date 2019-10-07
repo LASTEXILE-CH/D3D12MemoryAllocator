@@ -622,11 +622,12 @@ public:
     */
     void CalculateStats(Stats* pStats);
 
-    /// Builds ands returns statistics as a string in JSON format.
-    /** @param[out] ppStatsString Must be free using Allocator::FreeStatsString
+    /// Builds and returns statistics as a string in JSON format.
+    /** @param[out] ppStatsString Must be freed using Allocator::FreeStatsString.
     */
     void BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap);
 
+    /// Frees memory of a string returned from Allocator::BuildStatsString.
     void FreeStatsString(WCHAR* pStatsString);
 
 private:

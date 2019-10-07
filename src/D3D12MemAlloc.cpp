@@ -758,14 +758,14 @@ public:
     size_t GetLength() const { return m_Data.size(); }
     LPCWSTR GetData() const { return m_Data.data(); }
 
-    void Add(wchar_t ch) { m_Data.push_back(ch); }
+    void Add(WCHAR ch) { m_Data.push_back(ch); }
     void Add(LPCWSTR str);
     void AddNewLine() { Add(L'\n'); }
     void AddNumber(UINT num);
     void AddNumber(UINT64 num);
 
 private:
-    Vector<wchar_t> m_Data;
+    Vector<WCHAR> m_Data;
 };
 
 void StringBuilder::Add(LPCWSTR str)
@@ -775,15 +775,15 @@ void StringBuilder::Add(LPCWSTR str)
     {
         const size_t oldCount = m_Data.size();
         m_Data.resize(oldCount + len);
-        memcpy(m_Data.data() + oldCount, str, len * sizeof(wchar_t));
+        memcpy(m_Data.data() + oldCount, str, len * sizeof(WCHAR));
     }
 }
 
 void StringBuilder::AddNumber(UINT num)
 {
-    wchar_t buf[11];
+    WCHAR buf[11];
     buf[10] = L'\0';
-    wchar_t *p = &buf[10];
+    WCHAR *p = &buf[10];
     do
     {
         *--p = L'0' + (num % 10);
@@ -795,9 +795,9 @@ void StringBuilder::AddNumber(UINT num)
 
 void StringBuilder::AddNumber(UINT64 num)
 {
-    wchar_t buf[21];
+    WCHAR buf[21];
     buf[20] = L'\0';
-    wchar_t *p = &buf[20];
+    WCHAR *p = &buf[20];
     do
     {
         *--p = L'0' + (num % 10);
@@ -835,7 +835,7 @@ public:
     void WriteNull();
 
 private:
-    static const wchar_t* const INDENT;
+    static const WCHAR* const INDENT;
 
     enum CollectionType
     {
@@ -857,7 +857,7 @@ private:
     void WriteIndent(bool oneLess = false);
 };
 
-const wchar_t* const JsonWriter::INDENT = L"  ";
+const WCHAR* const JsonWriter::INDENT = L"  ";
 
 JsonWriter::JsonWriter(const ALLOCATION_CALLBACKS& allocationCallbacks, StringBuilder& stringBuilder) :
     m_SB(stringBuilder),
@@ -937,7 +937,9 @@ void JsonWriter::BeginString(LPCWSTR pStr)
     m_InsideString = true;
     m_SB.Add(L'"');
     if (pStr != NULL)
+    {
         ContinueString(pStr);
+    }
 }
 
 void JsonWriter::ContinueString(LPCWSTR pStr)
@@ -945,7 +947,7 @@ void JsonWriter::ContinueString(LPCWSTR pStr)
     D3D12MA_ASSERT(m_InsideString);
     D3D12MA_ASSERT(pStr);
 
-    for (const wchar_t *p = pStr; *p; ++p)
+    for (const WCHAR *p = pStr; *p; ++p)
     {
         // the strings we encode are assumed to be in UTF-16LE format, the native
         // windows wide character unicode format. In this encoding unicode code
@@ -2627,20 +2629,18 @@ void BlockMetadata_Generic::WriteAllocationInfoToJson(JsonWriter& json) const
         if(suballoc.type == SUBALLOCATION_TYPE_FREE)
         {
             json.WriteString(L"FREE");
-            json.WriteString(L"Name");
-            json.WriteNull();
         }
         else
         {
             json.WriteString(L"ALLOCATION");
-            json.WriteString(L"Name");
             const Allocation* const alloc = suballoc.allocation;
             D3D12MA_ASSERT(alloc);
             const WCHAR* const name = alloc->GetName();
-            if (name == NULL)
-                json.WriteNull();
-            else
+            if(name != NULL)
+            {
+                json.WriteString(L"Name");
                 json.WriteString(name);
+            }
         }
         json.WriteString(L"Size");
         json.WriteNumber(suballoc.size);
@@ -3493,7 +3493,7 @@ void AllocatorPimpl::CalculateStats(Stats& outStats)
         PostProcessStatInfo(outStats.HeapType[i]);
 }
 
-static void AddStatInfoToJson(JsonWriter& json, StatInfo& statInfo)
+static void AddStatInfoToJson(JsonWriter& json, const StatInfo& statInfo)
 {
     json.BeginObject();
     json.WriteString(L"Blocks");
@@ -3624,12 +3624,12 @@ void AllocatorPimpl::BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap)
                     json.WriteString(L"ALLOCATION");
                     json.WriteString(L"Size");
                     json.WriteNumber(alloc->GetSize());
-                    json.WriteString(L"Name");
                     LPCWSTR name = alloc->GetName();
-                    if (name == NULL)
-                        json.WriteNull();
-                    else
+                    if(name != NULL)
+                    {
+                        json.WriteString(L"Name");
                         json.WriteString(name);
+                    }
                     json.EndObject();
                 }
                 json.EndArray();
@@ -3642,9 +3642,10 @@ void AllocatorPimpl::BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap)
         json.EndObject();
     }
 
-    WCHAR* result = AllocateArray<WCHAR>(GetAllocs(), sb.GetLength() + 1);
-    memcpy(result, sb.GetData(), sb.GetLength() * sizeof(WCHAR));
-    result[sb.GetLength()] = L'\0';
+    const size_t length = sb.GetLength();
+    WCHAR* result = AllocateArray<WCHAR>(GetAllocs(), length + 1);
+    memcpy(result, sb.GetData(), length * sizeof(WCHAR));
+    result[length] = L'\0';
     *ppStatsString = result;
 }
 
@@ -3716,8 +3717,8 @@ void Allocation::SetName(LPCWSTR Name)
     if(Name)
     {
         const size_t nameCharCount = wcslen(Name) + 1;
-        m_Name = D3D12MA_NEW_ARRAY(m_Allocator->GetAllocs(), wchar_t, nameCharCount);
-        memcpy(m_Name, Name, nameCharCount * sizeof(wchar_t));
+        m_Name = D3D12MA_NEW_ARRAY(m_Allocator->GetAllocs(), WCHAR, nameCharCount);
+        memcpy(m_Name, Name, nameCharCount * sizeof(WCHAR));
     }
 }
 
@@ -3831,6 +3832,7 @@ void Allocator::FreeStatsString(WCHAR* pStatsString)
 {
     if (pStatsString != NULL)
     {
+        D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
         m_Pimpl->FreeStatsString(pStatsString);
     }
 }
