@@ -24,7 +24,7 @@
 
 /** \mainpage D3D12 Memory Allocator
 
-<b>Version 1.0.0-development</b> (2019-10-02)
+<b>Version 1.0.0-development</b> (2019-10-09)
 
 Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved. \n
 License: MIT
@@ -320,7 +320,11 @@ Features deliberately excluded from the scope of this library:
 
 */
 
-#include <d3d12.h>
+// If using this library on a platform different than Windows PC, you should
+// include D3D12-compatible header before this library on your own.
+#ifdef _WIN32
+    #include <d3d12.h>
+#endif
 
 /// \cond INTERNAL
 
@@ -477,6 +481,7 @@ private:
     {
         TYPE_COMMITTED,
         TYPE_PLACED,
+        TYPE_HEAP,
         TYPE_COUNT
     } m_Type;
     UINT64 m_Size;
@@ -495,12 +500,19 @@ private:
             UINT64 offset;
             NormalBlock* block;
         } m_Placed;
+
+        struct
+        {
+            D3D12_HEAP_TYPE heapType;
+            ID3D12Heap* heap;
+        } m_Heap;
     };
 
     Allocation();
     ~Allocation();
     void InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType);
     void InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, NormalBlock* block);
+    void InitHeap(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType, ID3D12Heap* heap);
     void SetResource(ID3D12Resource* resource);
     void FreeName();
 
@@ -641,6 +653,27 @@ public:
         Allocation** ppAllocation,
         REFIID riidResource,
         void** ppvResource);
+
+    /* \brief Allocates memory without creating any resource placed in it.
+
+    This function is similar to `ID3D12Device::CreateHeap`, but it may really assign
+    part of a larger, existing heap to the allocation.
+
+    If ResourceHeapTier = 1, `heapFlags` must be one of these values, depending on type
+    of resources you are going to create in this memory:
+    `D3D12_HEAP_FLAG_ALLOW_ONLY_BUFFERS`,
+    `D3D12_HEAP_FLAG_ALLOW_ONLY_NON_RT_DS_TEXTURES`,
+    `D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES`.
+    If ResourceHeapTier = 2, `heapFlags` may be `D3D12_HEAP_FLAG_ALLOW_ALL_BUFFERS_AND_TEXTURES`.
+
+    `pAllocInfo->SizeInBytes` must be multiply of 64KB.
+    `pAllocInfo->Alignment` must be one of the legal values as described in documentation of `D3D12_HEAP_DESC`.
+    */
+    HRESULT AllocateMemory(
+        const ALLOCATION_DESC* pAllocDesc,
+        D3D12_HEAP_FLAGS heapFlags,
+        const D3D12_RESOURCE_ALLOCATION_INFO* pAllocInfo,
+        Allocation** ppAllocation);
 
     /** \brief Retrieves statistics from the current state of the allocator.
     */
