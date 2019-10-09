@@ -115,6 +115,8 @@ static void TestCommittedResourcesAndJson(const TestContext& ctx)
 
     for(UINT i = 0; i < count; ++i)
     {
+        const bool receiveExplicitResource = i < 2;
+
         D3D12MA::Allocation* alloc = nullptr;
         CHECK_HR( ctx.allocator->CreateResource(
             &allocDesc,
@@ -122,8 +124,18 @@ static void TestCommittedResourcesAndJson(const TestContext& ctx)
             D3D12_RESOURCE_STATE_GENERIC_READ,
             NULL,
             &alloc,
-            IID_PPV_ARGS(&resources[i].resource)) );
+            __uuidof(ID3D12Resource),
+            receiveExplicitResource ? (void**)&resources[i].resource : NULL));
         resources[i].allocation.reset(alloc);
+
+        if(receiveExplicitResource)
+        {
+            ID3D12Resource* res = resources[i].resource.p;
+            CHECK_BOOL(res && res == resources[i].allocation->GetResource());
+            const ULONG refCountAfterAdd = res->AddRef();
+            CHECK_BOOL(refCountAfterAdd == 3);
+            res->Release();
+        }
         
         // Make sure it has implicit heap.
         CHECK_BOOL( resources[i].allocation->GetHeap() == NULL && resources[i].allocation->GetOffset() == 0 );
@@ -508,7 +520,7 @@ static void TestMultithreading(const TestContext& ctx)
             resources.reserve(256);
 
             // Create starting number of buffers.
-            const UINT bufToCreateCount = 64;
+            const UINT bufToCreateCount = 32;
             for(UINT bufIndex = 0; bufIndex < bufToCreateCount; ++bufIndex)
             {
                 ResourceWithAllocation res = {};

@@ -227,12 +227,7 @@ static inline void D3D12MA_SWAP(T& a, T& b)
 #endif
 
 /*
-If providing your own implementation, you need to implement a subset of std::atomic:
-
-- Constructor(UINT desired)
-- UINT load() const
-- void store(UINT desired)
-- bool compare_exchange_weak(UINT& expected, UINT desired)
+If providing your own implementation, you need to implement a subset of std::atomic.
 */
 #ifndef D3D12MA_ATOMIC_UINT32
     #define D3D12MA_ATOMIC_UINT32 std::atomic<UINT>
@@ -504,6 +499,27 @@ static void PostProcessStatInfo(StatInfo& statInfo)
         statInfo.UsedBytes / statInfo.AllocationCount : 0;
     statInfo.UnusedRangeSizeAvg = statInfo.UnusedRangeCount ?
         statInfo.UnusedBytes / statInfo.UnusedRangeCount : 0;
+}
+
+static UINT64 HeapFlagsToAlignment(D3D12_HEAP_FLAGS flags)
+{
+    /*
+    Documentation of D3D12_HEAP_DESC structure says:
+
+    - D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT   defined as 64KB.
+    - D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT   defined as 4MB. An
+    application must decide whether the heap will contain multi-sample
+    anti-aliasing (MSAA), in which case, the application must choose [this flag].
+
+    https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_heap_desc
+    */
+
+    const D3D12_HEAP_FLAGS denyAllTexturesFlags =
+        D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES | D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES;
+    const bool canContainAnyTextures =
+        (flags & denyAllTexturesFlags) != denyAllTexturesFlags;
+    return canContainAnyTextures ?
+        D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1685,7 +1701,7 @@ enum SuballocationType
 };
 
 /*
-Represents a region of DeviceMemoryBlock that is either assigned and returned as
+Represents a region of NormalBlock that is either assigned and returned as
 allocated memory block or free.
 */
 struct Suballocation
@@ -1727,7 +1743,7 @@ struct SuballocationItemSizeLess
 };
 
 /*
-Parameters of planned allocation inside a DeviceMemoryBlock.
+Parameters of planned allocation inside a NormalBlock.
 */
 struct AllocationRequest
 {
@@ -1855,59 +1871,85 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// Private class DeviceMemoryBlock definition
+// Private class MemoryBlock definition
+
+/*
+Represents a single block of device memory (heap).
+Base class for inheritance.
+Thread-safety: This class must be externally synchronized.
+*/
+class MemoryBlock
+{
+public:
+    MemoryBlock(
+        AllocatorPimpl* allocator,
+        D3D12_HEAP_TYPE heapType,
+        D3D12_HEAP_FLAGS heapFlags,
+        UINT64 size,
+        UINT id);
+    virtual ~MemoryBlock();
+    // Creates the ID3D12Heap.
+
+    D3D12_HEAP_TYPE GetHeapType() const { return m_HeapType; }
+    D3D12_HEAP_FLAGS GetHeapFlags() const { return m_HeapFlags; }
+    UINT64 GetSize() const { return m_Size; }
+    UINT GetId() const { return m_Id; }
+    ID3D12Heap* GetHeap() const { return m_Heap; }
+
+protected:
+    AllocatorPimpl* const m_Allocator;
+    const D3D12_HEAP_TYPE m_HeapType;
+    const D3D12_HEAP_FLAGS m_HeapFlags;
+    const UINT64 m_Size;
+    const UINT m_Id;
+
+    HRESULT Init();
+
+private:
+    ID3D12Heap* m_Heap = NULL;
+
+    D3D12MA_CLASS_NO_COPY(MemoryBlock)
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class NormalBlock definition
 
 /*
 Represents a single block of device memory (heap) with all the data about its
 regions (aka suballocations, Allocation), assigned and free.
-
 Thread-safety: This class must be externally synchronized.
 */
-class DeviceMemoryBlock
+class NormalBlock : public MemoryBlock
 {
 public:
     BlockMetadata* m_pMetadata;
 
-    DeviceMemoryBlock();
-
-    ~DeviceMemoryBlock()
-    {
-        D3D12MA_ASSERT(m_Heap == NULL);
-    }
-
-    // Always call after construction.
-    void Init(
+    NormalBlock(
         AllocatorPimpl* allocator,
         BlockVector* blockVector,
-        D3D12_HEAP_TYPE newHeapType,
-        ID3D12Heap* newHeap,
-        UINT64 newSize,
+        D3D12_HEAP_TYPE heapType,
+        D3D12_HEAP_FLAGS heapFlags,
+        UINT64 size,
         UINT id);
-    // Always call before destruction.
-    void Destroy(AllocatorPimpl* allocator);
+    virtual ~NormalBlock();
+    HRESULT Init();
 
     BlockVector* GetBlockVector() const { return m_BlockVector; }
-    ID3D12Heap* GetHeap() const { return m_Heap; }
-    D3D12_HEAP_TYPE GetHeapType() const { return m_HeapType; }
-    UINT GetId() const { return m_Id; }
 
     // Validates all data structures inside this object. If not valid, returns false.
     bool Validate() const;
 
 private:
     BlockVector* m_BlockVector;
-    D3D12_HEAP_TYPE m_HeapType;
-    UINT m_Id;
-    ID3D12Heap* m_Heap;
 
-    D3D12MA_CLASS_NO_COPY(DeviceMemoryBlock)
+    D3D12MA_CLASS_NO_COPY(NormalBlock)
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private class BlockVector definition
 
 /*
-Sequence of DeviceMemoryBlock. Represents memory blocks allocated for a specific
+Sequence of NormalBlock. Represents memory blocks allocated for a specific
 heap type and possibly resource type (if only Tier 1 is supported).
 
 Synchronized internally with a mutex.
@@ -1948,8 +1990,6 @@ public:
     void WriteBlockInfoToJson(JsonWriter& json);
 
 private:
-    static UINT64 HeapFlagsToAlignment(D3D12_HEAP_FLAGS flags);
-
     AllocatorPimpl* const m_hAllocator;
     const D3D12_HEAP_TYPE m_HeapType;
     const D3D12_HEAP_FLAGS m_HeapFlags;
@@ -1963,13 +2003,13 @@ private:
     bool m_HasEmptyBlock;
     D3D12MA_RW_MUTEX m_Mutex;
     // Incrementally sorted by sumFreeSize, ascending.
-    Vector<DeviceMemoryBlock*> m_Blocks;
+    Vector<NormalBlock*> m_Blocks;
     UINT m_NextBlockId;
 
     UINT64 CalcMaxBlockSize() const;
 
     // Finds and removes given block from vector.
-    void Remove(DeviceMemoryBlock* pBlock);
+    void Remove(NormalBlock* pBlock);
 
     // Performs single step in sorting m_Blocks. They may not be fully sorted
     // after this call.
@@ -1982,14 +2022,13 @@ private:
         Allocation** pAllocation);
 
     HRESULT AllocateFromBlock(
-        DeviceMemoryBlock* pBlock,
+        NormalBlock* pBlock,
         UINT64 size,
         UINT64 alignment,
         ALLOCATION_FLAGS allocFlags,
         Allocation** pAllocation);
 
     HRESULT CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex);
-    HRESULT CreateD3d12Heap(ID3D12Heap*& outHeap, UINT64 size) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2651,56 +2690,89 @@ void BlockMetadata_Generic::WriteAllocationInfoToJson(JsonWriter& json) const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Private class DeviceMemoryBlock implementation
+// Private class NormalBlock implementation
 
-DeviceMemoryBlock::DeviceMemoryBlock() :
-    m_pMetadata(NULL),
-    m_BlockVector(NULL),
-    m_HeapType(D3D12_HEAP_TYPE_CUSTOM),
-    m_Id(0),
-    m_Heap(NULL)
-{
-}
-
-void DeviceMemoryBlock::Init(
+NormalBlock::NormalBlock(
     AllocatorPimpl* allocator,
     BlockVector* blockVector,
-    D3D12_HEAP_TYPE newHeapType,
-    ID3D12Heap* newHeap,
-    UINT64 newSize,
-    UINT id)
+    D3D12_HEAP_TYPE heapType,
+    D3D12_HEAP_FLAGS heapFlags,
+    UINT64 size,
+    UINT id) :
+    MemoryBlock(allocator, heapType, heapFlags, size, id),
+    m_BlockVector(blockVector)
 {
-    D3D12MA_ASSERT(m_Heap == NULL);
-
-    m_BlockVector = blockVector;
-    m_HeapType = newHeapType;
-    m_Id = id;
-    m_Heap = newHeap;
-
-    const ALLOCATION_CALLBACKS& allocs = allocator->GetAllocs();
-
-    m_pMetadata = D3D12MA_NEW(allocs, BlockMetadata_Generic)(&allocs);
-    m_pMetadata->Init(newSize);
 }
 
-void DeviceMemoryBlock::Destroy(AllocatorPimpl* allocator)
+NormalBlock::~NormalBlock()
 {
     // THIS IS THE MOST IMPORTANT ASSERT IN THE ENTIRE LIBRARY!
     // Hitting it means you have some memory leak - unreleased Allocation objects.
     D3D12MA_ASSERT(m_pMetadata->IsEmpty() && "Some allocations were not freed before destruction of this memory block!");
 
-    D3D12MA_ASSERT(m_Heap != NULL);
-    m_Heap->Release();
-    m_Heap = NULL;
-
-    D3D12MA_DELETE(allocator->GetAllocs(), m_pMetadata);
+    D3D12MA_DELETE(m_Allocator->GetAllocs(), m_pMetadata);
     m_pMetadata = NULL;
 }
 
-bool DeviceMemoryBlock::Validate() const
+HRESULT NormalBlock::Init()
 {
-    D3D12MA_VALIDATE(m_Heap && m_pMetadata && m_pMetadata->GetSize() != 0);
+    HRESULT hr = MemoryBlock::Init();
+    if(FAILED(hr))
+    {
+        return hr;
+    }
+    
+    m_pMetadata = D3D12MA_NEW(m_Allocator->GetAllocs(), BlockMetadata_Generic)(&m_Allocator->GetAllocs());
+    m_pMetadata->Init(m_Size);
+
+    return hr;
+}
+
+bool NormalBlock::Validate() const
+{
+    D3D12MA_VALIDATE(GetHeap() &&
+        m_pMetadata &&
+        m_pMetadata->GetSize() != 0 &&
+        m_pMetadata->GetSize() == GetSize());
     return m_pMetadata->Validate();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Private class MemoryBlock definition
+
+MemoryBlock::MemoryBlock(
+    AllocatorPimpl* allocator,
+    D3D12_HEAP_TYPE heapType,
+    D3D12_HEAP_FLAGS heapFlags,
+    UINT64 size,
+    UINT id) :
+    m_Allocator(allocator),
+    m_HeapType(heapType),
+    m_HeapFlags(heapFlags),
+    m_Size(size),
+    m_Id(id)
+{
+}
+
+MemoryBlock::~MemoryBlock()
+{
+    if(m_Heap)
+    {
+        m_Heap->Release();
+    }
+}
+
+HRESULT MemoryBlock::Init()
+{
+    D3D12MA_ASSERT(m_Heap == NULL && m_Size > 0);
+
+    D3D12_HEAP_DESC heapDesc = {};
+    heapDesc.SizeInBytes = m_Size;
+    heapDesc.Properties.Type = m_HeapType;
+    heapDesc.Alignment = HeapFlagsToAlignment(m_HeapFlags);
+    heapDesc.Flags = m_HeapFlags;
+
+    return m_Allocator->GetDevice()->CreateHeap(&heapDesc, __uuidof(*m_Heap), (void**)&m_Heap);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2731,7 +2803,6 @@ BlockVector::~BlockVector()
 {
     for(size_t i = m_Blocks.size(); i--; )
     {
-        m_Blocks[i]->Destroy(m_hAllocator);
         D3D12MA_DELETE(m_hAllocator->GetAllocs(), m_Blocks[i]);
     }
 }
@@ -2814,7 +2885,7 @@ HRESULT BlockVector::AllocatePage(
                 // Forward order in m_Blocks - prefer blocks with smallest amount of free space.
                 for(size_t blockIndex = 0; blockIndex < m_Blocks.size(); ++blockIndex )
                 {
-                    DeviceMemoryBlock* const pCurrBlock = m_Blocks[blockIndex];
+                    NormalBlock* const pCurrBlock = m_Blocks[blockIndex];
                     D3D12MA_ASSERT(pCurrBlock);
                     HRESULT hr = AllocateFromBlock(
                         pCurrBlock,
@@ -2880,7 +2951,7 @@ HRESULT BlockVector::AllocatePage(
 
             if(SUCCEEDED(hr))
             {
-                DeviceMemoryBlock* const pBlock = m_Blocks[newBlockIndex];
+                NormalBlock* const pBlock = m_Blocks[newBlockIndex];
                 D3D12MA_ASSERT(pBlock->m_pMetadata->GetSize() >= size);
 
                 hr = AllocateFromBlock(
@@ -2907,13 +2978,13 @@ HRESULT BlockVector::AllocatePage(
 
 void BlockVector::Free(Allocation* hAllocation)
 {
-    DeviceMemoryBlock* pBlockToDelete = NULL;
+    NormalBlock* pBlockToDelete = NULL;
 
     // Scope for lock.
     {
         MutexLockWrite lock(m_Mutex, m_hAllocator->UseMutex());
 
-        DeviceMemoryBlock* pBlock = hAllocation->GetBlock();
+        NormalBlock* pBlock = hAllocation->m_Placed.block;
 
         pBlock->m_pMetadata->Free(hAllocation);
         D3D12MA_HEAVY_ASSERT(pBlock->Validate());
@@ -2937,7 +3008,7 @@ void BlockVector::Free(Allocation* hAllocation)
         // (This is optional, heuristics.)
         else if(m_HasEmptyBlock)
         {
-            DeviceMemoryBlock* pLastBlock = m_Blocks.back();
+            NormalBlock* pLastBlock = m_Blocks.back();
             if(pLastBlock->m_pMetadata->IsEmpty() && m_Blocks.size() > m_MinBlockCount)
             {
                 pBlockToDelete = pLastBlock;
@@ -2953,30 +3024,8 @@ void BlockVector::Free(Allocation* hAllocation)
     // lock, for performance reason.
     if(pBlockToDelete != NULL)
     {
-        pBlockToDelete->Destroy(m_hAllocator);
         D3D12MA_DELETE(m_hAllocator->GetAllocs(), pBlockToDelete);
     }
-}
-
-UINT64 BlockVector::HeapFlagsToAlignment(D3D12_HEAP_FLAGS flags)
-{
-    /*
-    Documentation of D3D12_HEAP_DESC structure says:
-
-    - D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT   defined as 64KB.
-    - D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT   defined as 4MB. An
-      application must decide whether the heap will contain multi-sample
-      anti-aliasing (MSAA), in which case, the application must choose [this flag].
-
-    https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_heap_desc
-    */
-
-    const D3D12_HEAP_FLAGS denyAllTexturesFlags =
-        D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES | D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES;
-    const bool canContainAnyTextures =
-        (flags & denyAllTexturesFlags) != denyAllTexturesFlags;
-    return canContainAnyTextures ?
-        D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
 }
 
 UINT64 BlockVector::CalcMaxBlockSize() const
@@ -2993,7 +3042,7 @@ UINT64 BlockVector::CalcMaxBlockSize() const
     return result;
 }
 
-void BlockVector::Remove(DeviceMemoryBlock* pBlock)
+void BlockVector::Remove(NormalBlock* pBlock)
 {
     for(UINT blockIndex = 0; blockIndex < m_Blocks.size(); ++blockIndex)
     {
@@ -3020,7 +3069,7 @@ void BlockVector::IncrementallySortBlocks()
 }
 
 HRESULT BlockVector::AllocateFromBlock(
-    DeviceMemoryBlock* pBlock,
+    NormalBlock* pBlock,
     UINT64 size,
     UINT64 alignment,
     ALLOCATION_FLAGS allocFlags,
@@ -3054,21 +3103,19 @@ HRESULT BlockVector::AllocateFromBlock(
 
 HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
 {
-    ID3D12Heap* heap = NULL;
-    HRESULT hr = CreateD3d12Heap(heap, blockSize);
-    if(FAILED(hr))
-    {
-        return hr;
-    }
-
-    DeviceMemoryBlock* const pBlock = D3D12MA_NEW(m_hAllocator->GetAllocs(), DeviceMemoryBlock)();
-    pBlock->Init(
+    NormalBlock* const pBlock = D3D12MA_NEW(m_hAllocator->GetAllocs(), NormalBlock)(
         m_hAllocator,
         this,
         m_HeapType,
-        heap,
+        m_HeapFlags,
         blockSize,
         m_NextBlockId++);
+    HRESULT hr = pBlock->Init();
+    if(FAILED(hr))
+    {
+        D3D12MA_DELETE(m_hAllocator->GetAllocs(), pBlock);
+        return hr;
+    }
 
     m_Blocks.push_back(pBlock);
     if(pNewBlockIndex != NULL)
@@ -3077,18 +3124,6 @@ HRESULT BlockVector::CreateBlock(UINT64 blockSize, size_t* pNewBlockIndex)
     }
 
     return hr;
-}
-
-HRESULT BlockVector::CreateD3d12Heap(ID3D12Heap*& outHeap, UINT64 size) const
-{
-    D3D12_HEAP_DESC heapDesc = {};
-    heapDesc.SizeInBytes = size;
-    heapDesc.Properties.Type = m_HeapType;
-    heapDesc.Alignment = HeapFlagsToAlignment(m_HeapFlags);
-    heapDesc.Flags = m_HeapFlags;
-
-    ID3D12Heap* heap = NULL;
-    return m_hAllocator->GetDevice()->CreateHeap(&heapDesc, IID_PPV_ARGS(&outHeap));
 }
 
 void BlockVector::AddStats(Stats& outStats)
@@ -3100,7 +3135,7 @@ void BlockVector::AddStats(Stats& outStats)
 
     for(size_t i = 0; i < m_Blocks.size(); ++i)
     {
-        const DeviceMemoryBlock* const pBlock = m_Blocks[i];
+        const NormalBlock* const pBlock = m_Blocks[i];
         D3D12MA_ASSERT(pBlock);
         D3D12MA_HEAVY_ASSERT(pBlock->Validate());
         StatInfo blockStatInfo;
@@ -3118,7 +3153,7 @@ void BlockVector::WriteBlockInfoToJson(JsonWriter& json)
 
     for (size_t i = 0, count = m_Blocks.size(); i < count; ++i)
     {
-        const DeviceMemoryBlock* const pBlock = m_Blocks[i];
+        const NormalBlock* const pBlock = m_Blocks[i];
         D3D12MA_ASSERT(pBlock);
         D3D12MA_HEAVY_ASSERT(pBlock->Validate());
         json.BeginString();
@@ -3139,6 +3174,7 @@ AllocatorPimpl::AllocatorPimpl(const ALLOCATION_CALLBACKS& allocationCallbacks, 
     m_Device(desc.pDevice),
     m_PreferredBlockSize(desc.PreferredBlockSize != 0 ? desc.PreferredBlockSize : D3D12MA_DEFAULT_BLOCK_SIZE),
     m_AllocationCallbacks(allocationCallbacks)
+    // Below this line don't use allocationCallbacks but m_AllocationCallbacks!!!
 {
     // desc.pAllocationCallbacks intentionally ignored here, preprocessed by CreateAllocator.
     ZeroMemory(&m_D3D12Options, sizeof(m_D3D12Options));
@@ -3192,7 +3228,7 @@ AllocatorPimpl::~AllocatorPimpl()
     {
         if(m_pCommittedAllocations[i] && !m_pCommittedAllocations[i]->empty())
         {
-            D3D12MA_ASSERT(0 && "Unfreed committed allocations found.");
+            D3D12MA_ASSERT(0 && "Unfreed committed allocations found!");
         }
 
         D3D12MA_DELETE(GetAllocs(), m_pCommittedAllocations[i]);
@@ -3217,7 +3253,10 @@ HRESULT AllocatorPimpl::CreateResource(
 
     ALLOCATION_DESC finalAllocDesc = *pAllocDesc;
 
-    *ppvResource = NULL;
+    if(ppvResource)
+    {
+        *ppvResource = NULL;
+    }
 
     D3D12_RESOURCE_ALLOCATION_INFO resAllocInfo = m_Device->GetResourceAllocationInfo(0, 1, pResourceDesc);
     resAllocInfo.Alignment = D3D12MA_MAX<UINT64>(resAllocInfo.Alignment, D3D12MA_DEBUG_ALIGNMENT);
@@ -3262,16 +3301,23 @@ HRESULT AllocatorPimpl::CreateResource(
             (Allocation**)ppAllocation);
         if(SUCCEEDED(hr))
         {
+            ID3D12Resource* res = NULL;
             hr = m_Device->CreatePlacedResource(
-                (*ppAllocation)->GetBlock()->GetHeap(),
+                (*ppAllocation)->m_Placed.block->GetHeap(),
                 (*ppAllocation)->GetOffset(),
                 pResourceDesc,
                 InitialResourceState,
                 pOptimizedClearValue,
                 riidResource,
-                ppvResource);
+                (void**)&res);
             if(SUCCEEDED(hr))
             {
+                (*ppAllocation)->SetResource(res);
+                if(ppvResource != NULL)
+                {
+                    res->AddRef();
+                    *ppvResource = res;
+                }
                 return hr;
             }
             else
@@ -3316,14 +3362,22 @@ HRESULT AllocatorPimpl::AllocateCommittedMemory(
 
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = pAllocDesc->HeapType;
+    ID3D12Resource* res = NULL;
     HRESULT hr = m_Device->CreateCommittedResource(
         &heapProps, D3D12_HEAP_FLAG_NONE, pResourceDesc, InitialResourceState,
-        pOptimizedClearValue, riidResource, ppvResource);
+        pOptimizedClearValue, riidResource, (void**)&res);
     if(SUCCEEDED(hr))
     {
         Allocation* alloc = D3D12MA_NEW(m_AllocationCallbacks, Allocation)();
         alloc->InitCommitted(this, resAllocInfo.SizeInBytes, pAllocDesc->HeapType);
+        alloc->SetResource(res);
+
         *ppAllocation = alloc;
+        if(ppvResource != NULL)
+        {
+            res->AddRef();
+            *ppvResource = res;
+        }
 
         const UINT heapTypeIndex = HeapTypeToIndex(pAllocDesc->HeapType);
 
@@ -3434,8 +3488,8 @@ void AllocatorPimpl::FreeCommittedMemory(Allocation* allocation)
 void AllocatorPimpl::FreePlacedMemory(Allocation* allocation)
 {
     D3D12MA_ASSERT(allocation && allocation->m_Type == Allocation::TYPE_PLACED);
-    
-    DeviceMemoryBlock* const block = allocation->GetBlock();
+
+    NormalBlock* const block = allocation->m_Placed.block;
     D3D12MA_ASSERT(block);
     BlockVector* const blockVector = block->GetBlockVector();
     D3D12MA_ASSERT(blockVector);
@@ -3667,6 +3721,11 @@ void Allocation::Release()
 
     D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
 
+    if(m_Resource)
+    {
+        m_Resource->Release();
+    }
+
     switch(m_Type)
     {
     case TYPE_COMMITTED:
@@ -3741,24 +3800,26 @@ void Allocation::InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEA
     m_Allocator = allocator;
     m_Type = TYPE_COMMITTED;
     m_Size = size;
+    m_Resource = NULL;
     m_Name = NULL;
     m_Committed.heapType = heapType;
 }
 
-void Allocation::InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, DeviceMemoryBlock* block)
+void Allocation::InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, NormalBlock* block)
 {
     m_Allocator = allocator;
     m_Type = TYPE_PLACED;
     m_Size = size;
+    m_Resource = NULL;
     m_Name = NULL;
     m_Placed.offset = offset;
     m_Placed.block = block;
 }
 
-DeviceMemoryBlock* Allocation::GetBlock()
+void Allocation::SetResource(ID3D12Resource* resource)
 {
-    D3D12MA_ASSERT(m_Type == TYPE_PLACED);
-    return m_Placed.block;
+    D3D12MA_ASSERT(m_Resource == NULL);
+    m_Resource = resource;
 }
 
 void Allocation::FreeName()
@@ -3809,7 +3870,7 @@ HRESULT Allocator::CreateResource(
     REFIID riidResource,
     void** ppvResource)
 {
-    D3D12MA_ASSERT(pAllocDesc && pResourceDesc && ppAllocation && riidResource != IID_NULL && ppvResource);
+    D3D12MA_ASSERT(pAllocDesc && pResourceDesc && ppAllocation && riidResource == __uuidof(ID3D12Resource));
     D3D12MA_DEBUG_GLOBAL_MUTEX_LOCK
     return m_Pimpl->CreateResource(pAllocDesc, pResourceDesc, InitialResourceState, pOptimizedClearValue, ppAllocation, riidResource, ppvResource);
 }
