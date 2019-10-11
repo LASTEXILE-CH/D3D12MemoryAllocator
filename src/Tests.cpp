@@ -20,8 +20,8 @@
 // THE SOFTWARE.
 //
 
-#include "Tests.h"
 #include "Common.h"
+#include "Tests.h"
 #include <thread>
 
 extern ID3D12GraphicsCommandList* BeginCommandList();
@@ -259,6 +259,77 @@ static void TestPlacedResources(const TestContext& ctx)
         &alloc,
         IID_PPV_ARGS(&renderTargetRes.resource)) );
     renderTargetRes.allocation.reset(alloc);
+}
+
+static void TestAliasingMemory(const TestContext& ctx)
+{
+    wprintf(L"Test aliasing memory\n");
+
+    D3D12MA::ALLOCATION_DESC allocDesc = {};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_RESOURCE_DESC resourceDesc1 = {};
+    resourceDesc1.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resourceDesc1.Alignment = 0;
+    resourceDesc1.Width = 1920;
+    resourceDesc1.Height = 1080;
+    resourceDesc1.DepthOrArraySize = 1;
+    resourceDesc1.MipLevels = 1;
+    resourceDesc1.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    resourceDesc1.SampleDesc.Count = 1;
+    resourceDesc1.SampleDesc.Quality = 0;
+    resourceDesc1.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    resourceDesc1.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    D3D12_RESOURCE_DESC resourceDesc2 = {};
+    resourceDesc2.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resourceDesc2.Alignment = 0;
+    resourceDesc2.Width = 1024;
+    resourceDesc2.Height = 1024;
+    resourceDesc2.DepthOrArraySize = 1;
+    resourceDesc2.MipLevels = 0;
+    resourceDesc2.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    resourceDesc2.SampleDesc.Count = 1;
+    resourceDesc2.SampleDesc.Quality = 0;
+    resourceDesc2.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    resourceDesc2.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    const D3D12_RESOURCE_ALLOCATION_INFO allocInfo1 = ctx.device->GetResourceAllocationInfo(0, 1, &resourceDesc1);
+    const D3D12_RESOURCE_ALLOCATION_INFO allocInfo2 = ctx.device->GetResourceAllocationInfo(0, 1, &resourceDesc2);
+
+    D3D12_RESOURCE_ALLOCATION_INFO allocInfo = {};
+    allocInfo.Alignment = std::max(allocInfo1.Alignment, allocInfo2.Alignment);
+    allocInfo.SizeInBytes = std::max(allocInfo1.SizeInBytes, allocInfo2.SizeInBytes);
+
+    D3D12MA::Allocation* allocPtr = NULL;
+    CHECK_HR( ctx.allocator->AllocateMemory(
+        &allocDesc,
+        D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES,
+        &allocInfo,
+        &allocPtr) );
+    AllocationUniquePtr alloc(allocPtr);
+    CHECK_BOOL(allocPtr != NULL && allocPtr->GetHeap() != NULL);
+
+    ID3D12Resource* resPtr = NULL;
+    CHECK_HR( ctx.device->CreatePlacedResource(
+        alloc->GetHeap(),
+        alloc->GetOffset(),
+        &resourceDesc1,
+        D3D12_RESOURCE_STATE_COMMON,
+        NULL, // pOptimizedClearValue
+        IID_PPV_ARGS(&resPtr)) );
+    CComPtr<ID3D12Resource> res1(resPtr);
+    CHECK_BOOL(resPtr != NULL);
+
+    CHECK_HR( ctx.device->CreatePlacedResource(
+        alloc->GetHeap(),
+        alloc->GetOffset(),
+        &resourceDesc2,
+        D3D12_RESOURCE_STATE_COMMON,
+        NULL, // pOptimizedClearValue
+        IID_PPV_ARGS(&resPtr)) );
+    CComPtr<ID3D12Resource> res2(resPtr);
+    CHECK_BOOL(resPtr != NULL);
 }
 
 static void TestMapping(const TestContext& ctx)
@@ -634,6 +705,7 @@ static void TestGroupBasics(const TestContext& ctx)
 {
     TestCommittedResourcesAndJson(ctx);
     TestPlacedResources(ctx);
+    TestAliasingMemory(ctx);
     TestMapping(ctx);
     TestStats(ctx);
     TestTransfer(ctx);
