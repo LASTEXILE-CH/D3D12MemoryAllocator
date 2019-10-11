@@ -4044,7 +4044,7 @@ HRESULT Allocator::CreateResource(
     REFIID riidResource,
     void** ppvResource)
 {
-    if(!pAllocDesc || !pResourceDesc || !ppAllocation || riidResource == IID_NULL || !ppvResource)
+    if(!pAllocDesc || !pResourceDesc || !ppAllocation || riidResource == IID_NULL)
     {
         D3D12MA_ASSERT(0 && "Invalid arguments passed to Allocator::CreateResource.");
         return E_INVALIDARG;
