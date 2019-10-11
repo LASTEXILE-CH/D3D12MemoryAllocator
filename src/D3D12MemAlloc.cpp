@@ -4012,6 +4012,9 @@ void Allocation::InitCommitted(AllocatorPimpl* allocator, UINT64 size, D3D12_HEA
     m_Name = NULL;
     m_Committed.heapType = heapType;
     m_CreationFrameIndex = allocator->GetCurrentFrameIndex();
+    m_ResourceDimension = D3D12_RESOURCE_DIMENSION_UNKNOWN;
+    m_ResourceFlags = D3D12_RESOURCE_FLAG_NONE;
+    m_TextureLayout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 }
 
 void Allocation::InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offset, UINT64 alignment, NormalBlock* block)
@@ -4025,6 +4028,9 @@ void Allocation::InitPlaced(AllocatorPimpl* allocator, UINT64 size, UINT64 offse
     m_Placed.offset = offset;
     m_Placed.block = block;
     m_CreationFrameIndex = allocator->GetCurrentFrameIndex();
+    m_ResourceDimension = D3D12_RESOURCE_DIMENSION_UNKNOWN;
+    m_ResourceFlags = D3D12_RESOURCE_FLAG_NONE;
+    m_TextureLayout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 }
 
 void Allocation::InitHeap(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYPE heapType, ID3D12Heap* heap)
@@ -4037,6 +4043,9 @@ void Allocation::InitHeap(AllocatorPimpl* allocator, UINT64 size, D3D12_HEAP_TYP
     m_Heap.heapType = heapType;
     m_Heap.heap = heap;
     m_CreationFrameIndex = allocator->GetCurrentFrameIndex();
+    m_ResourceDimension = D3D12_RESOURCE_DIMENSION_UNKNOWN;
+    m_ResourceFlags = D3D12_RESOURCE_FLAG_NONE;
+    m_TextureLayout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 }
 
 void Allocation::SetResource(ID3D12Resource* resource, const D3D12_RESOURCE_DESC* pResourceDesc)
