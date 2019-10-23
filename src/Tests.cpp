@@ -91,6 +91,54 @@ static bool ValidateData(const void* ptr, const UINT64 sizeInBytes, UINT seed)
     return true;
 }
 
+static void TestFrameIndexAndJson(const TestContext& ctx)
+{
+    const UINT64 bufSize = 32ull * 1024;
+
+    D3D12MA::ALLOCATION_DESC allocDesc = {};
+    allocDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
+    allocDesc.Flags = D3D12MA::ALLOCATION_FLAG_COMMITTED;
+
+    D3D12_RESOURCE_DESC resourceDesc;
+    FillResourceDescForBuffer(resourceDesc, bufSize);
+
+    const UINT BEGIN_INDEX = 10;
+    const UINT END_INDEX = 20;
+    UINT frameIndex = 0;
+    for (UINT frameIndex = BEGIN_INDEX; frameIndex < END_INDEX; ++frameIndex)
+    {
+        ctx.allocator->SetCurrentFrameIndex(frameIndex);
+        D3D12MA::Allocation* alloc = nullptr;
+        CHECK_HR(ctx.allocator->CreateResource(
+            &allocDesc,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            NULL,
+            &alloc,
+            __uuidof(ID3D12Resource),
+            NULL));
+
+        WCHAR* statsString;
+        ctx.allocator->BuildStatsString(&statsString, TRUE);
+        const UINT BUFFER_SIZE = 1024;
+        WCHAR buffer[BUFFER_SIZE];
+        for (UINT testIndex = BEGIN_INDEX; testIndex < END_INDEX; ++testIndex)
+        {
+            swprintf(buffer, BUFFER_SIZE, L"\"CreationFrameIndex\": %u", testIndex);
+            if (testIndex == frameIndex)
+            {
+                CHECK_BOOL(wcsstr(statsString, buffer) != NULL);
+            }
+            else
+            {
+                CHECK_BOOL(wcsstr(statsString, buffer) == NULL);
+            }
+        }
+        ctx.allocator->FreeStatsString(statsString);
+        alloc->Release();
+    }
+}
+
 static void TestCommittedResourcesAndJson(const TestContext& ctx)
 {
     wprintf(L"Test committed resources and JSON\n");
@@ -703,6 +751,7 @@ static void TestMultithreading(const TestContext& ctx)
 
 static void TestGroupBasics(const TestContext& ctx)
 {
+    TestFrameIndexAndJson(ctx);
     TestCommittedResourcesAndJson(ctx);
     TestPlacedResources(ctx);
     TestAliasingMemory(ctx);
