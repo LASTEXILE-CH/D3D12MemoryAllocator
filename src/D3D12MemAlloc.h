@@ -398,6 +398,10 @@ typedef enum ALLOCATION_FLAGS
     #ALLOCATION_FLAG_NEVER_ALLOCATE at the same time. It makes no sense.
     */
     ALLOCATION_FLAG_NEVER_ALLOCATE = 0x2,
+
+    /** TODO
+    */
+    ALLOCATION_FLAG_WITHIN_BUDGET = 0x4,
 } ALLOCATION_FLAGS;
 
 /// \brief Parameters of created Allocation object. To be used with Allocator::CreateResource.
@@ -572,6 +576,9 @@ struct ALLOCATOR_DESC
     Optional, can be null. When specified, will be used for all CPU-side memory allocations.
     */
     const ALLOCATION_CALLBACKS* pAllocationCallbacks;
+
+    /// TODO
+    IUnknown* pAdapter;
 };
 
 /**
@@ -614,6 +621,44 @@ struct Stats
     0 - DEFAULT, 1 - UPLOAD, 2 - READBACK.
     */
     StatInfo HeapType[HEAP_TYPE_COUNT];
+};
+
+/** \brief Statistics of current memory usage and available budget, in bytes, for GPU or CPU memory.
+*/
+struct Budget
+{
+    /** \brief Sum size of all memory blocks allocated from particular heap type, in bytes.
+    */
+    UINT64 BlockBytes;
+
+    /** \brief Sum size of all allocations created in particular heap type, in bytes.
+
+    Always less or equal than `BlockBytes`.
+    Difference `BlockBytes - AllocationBytes` is the amount of memory allocated but unused -
+    available for new allocations or wasted due to fragmentation.
+    */
+    UINT64 AllocationBytes;
+
+    /** \brief Estimated current memory usage of the program, in bytes.
+
+    Fetched from system using TODO if enabled.
+
+    It might be different than `BlockBytes` (usually higher) due to additional implicit objects
+    also occupying the memory, like swapchain, pipeline state objects, descriptor heaps, command lists, or
+    memory blocks allocated outside of this library, if any.
+    */
+    UINT64 Usage;
+
+    /** \brief Estimated amount of memory available to the program, in bytes.
+
+    Fetched from system using TODO if enabled.
+
+    It might be different (most probably smaller) than TODO due to factors
+    external to the program, like other programs also consuming system resources.
+    Difference `Budget - Usage` is the amount of additional memory that can probably
+    be allocated without problems. Exceeding the budget may result in various problems.
+    */
+    UINT64 Budget;
 };
 
 /**
@@ -701,6 +746,19 @@ public:
     /** \brief Retrieves statistics from the current state of the allocator.
     */
     void CalculateStats(Stats* pStats);
+
+    /** \brief Retrieves information about current memory budget.
+
+    \param[out] pGpuBudget Optional, can be null.
+    \param[out] pCpuBudget Optional, can be null.
+
+    This function is called "get" not "calculate" because it is very fast, suitable to be called
+    every frame or every allocation. For more detailed statistics use CalculateStats().
+
+    Note that when using allocator from multiple threads, returned information may immediately
+    become outdated.
+    */
+    void GetBudget(Budget* pGpuBudget, Budget* pCpuBudget);
 
     /// Builds and returns statistics as a string in JSON format.
     /** @param[out] ppStatsString Must be freed using Allocator::FreeStatsString.
