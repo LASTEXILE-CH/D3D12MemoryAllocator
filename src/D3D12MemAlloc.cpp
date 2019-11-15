@@ -2251,6 +2251,9 @@ private:
     void UnregisterCommittedAllocation(Allocation* alloc, D3D12_HEAP_TYPE heapType);
 
     HRESULT UpdateD3D12Budget();
+
+    // Writes object { } with data of given budget.
+    static void WriteBudgetToJson(JsonWriter& json, const Budget& budget);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3826,9 +3829,8 @@ void AllocatorPimpl::FreePlacedMemory(Allocation* allocation)
     D3D12MA_ASSERT(block);
     BlockVector* const blockVector = block->GetBlockVector();
     D3D12MA_ASSERT(blockVector);
-    blockVector->Free(allocation);
-
     m_Budget.RemoveAllocation(HeapTypeToIndex(block->GetHeapType()), allocation->GetSize());
+    blockVector->Free(allocation);
 }
 
 void AllocatorPimpl::FreeHeapMemory(Allocation* allocation)
@@ -4033,10 +4035,14 @@ void AllocatorPimpl::BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap)
     {
         JsonWriter json(GetAllocs(), sb);
 
+        Budget gpuBudget = {}, cpuBudget = {};
+        GetBudget(&gpuBudget, &cpuBudget);
+
         Stats stats;
         CalculateStats(stats);
 
         json.BeginObject();
+        
         json.WriteString(L"Total");
         AddStatInfoToJson(json, stats.Total);
         for (size_t heapType = 0; heapType < HEAP_TYPE_COUNT; ++heapType)
@@ -4044,6 +4050,16 @@ void AllocatorPimpl::BuildStatsString(WCHAR** ppStatsString, BOOL DetailedMap)
             json.WriteString(HeapTypeNames[heapType]);
             AddStatInfoToJson(json, stats.HeapType[heapType]);
         }
+
+        json.WriteString(L"Budget");
+        json.BeginObject();
+        {
+            json.WriteString(L"GPU");
+            WriteBudgetToJson(json, gpuBudget);
+            json.WriteString(L"CPU");
+            WriteBudgetToJson(json, cpuBudget);
+        }
+        json.EndObject();
 
         if (DetailedMap)
         {
@@ -4170,9 +4186,27 @@ HRESULT AllocatorPimpl::UpdateD3D12Budget()
         {
             m_Budget.m_BlockBytesAtBudgetFetch[i] = m_Budget.m_BlockBytes[i].load();
         }
+
+        m_Budget.m_OperationsSinceBudgetFetch = 0;
     }
 
     return FAILED(hrLocal) ? hrLocal : hrNonLocal;
+}
+
+void AllocatorPimpl::WriteBudgetToJson(JsonWriter& json, const Budget& budget)
+{
+    json.BeginObject();
+    {
+        json.WriteString(L"BlockBytes");
+        json.WriteNumber(budget.BlockBytes);
+        json.WriteString(L"AllocationBytes");
+        json.WriteNumber(budget.AllocationBytes);
+        json.WriteString(L"Usage");
+        json.WriteNumber(budget.Usage);
+        json.WriteString(L"Budget");
+        json.WriteNumber(budget.Budget);
+    }
+    json.EndObject();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
